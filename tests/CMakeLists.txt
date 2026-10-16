@@ -1,0 +1,20 @@
+add_executable(pkmn_tests
+    main.cpp
+    compression_test.cpp
+    extract_test.cpp
+    rom_overlay_test.cpp
+    sha1_test.cpp
+    sha256_test.cpp
+)
+
+target_link_libraries(pkmn_tests PRIVATE pkmn::core pkmn_warnings)
+
+target_compile_definitions(pkmn_tests PRIVATE
+    PKMNBWB_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
+
+add_test(NAME pkmn_tests COMMAND pkmn_tests)
+
+set_tests_properties(pkmn_tests PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)

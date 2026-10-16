@@ -1,0 +1,90 @@
+{
+  "game_code": "IRBO",
+  "sha256": "b9979189d299a0231d01c8885c0d054b706976ffc75427ca59d84e0ce1493034",
+  "module": "arm9",
+  "base": "0x02004000",
+  "notes": "arm9-init.md",
+  "symbols": [
+    {
+      "address": "0x02004800",
+      "name": "_start",
+      "kind": "function",
+      "size": null,
+      "comment": "NitroSDK crt0: IME=0, CP15 init, scratch clears, stub copies to 0x01FF8000, per-mode stacks, wait VBlank, bx to main",
+      "confidence": "high",
+      "evidence": ["A9-03", "A9-05", "A9-06", "A9-07", "A9-09", "A9-10"]
+    },
+    {
+      "address": "0x02004A00",
+      "name": "cpu_fill32",
+      "kind": "function",
+      "size": null,
+      "comment": "word fill loop; args (r0=value, r1=dst, r2=len)",
+      "confidence": "high",
+      "evidence": ["A9-05"]
+    },
+    {
+      "address": "0x02004A14",
+      "name": "cp15_init",
+      "kind": "function",
+      "size": null,
+      "comment": "reads CP15 c1,c0,0; cache/MMU control init",
+      "confidence": "high",
+      "evidence": ["A9-06"]
+    },
+    {
+      "address": "0x02004A98",
+      "name": "boot_helper_a98",
+      "kind": "function",
+      "size": null,
+      "comment": "called by crt0 before privilege-mode stack setup; semantics unresolved",
+      "confidence": "low",
+      "evidence": ["A9-07"]
+    },
+    {
+      "address": "0x02004EB4",
+      "name": "boot_mode_check",
+      "kind": "function",
+      "size": null,
+      "comment": "returns (ldrb[0x04004000] & 3) == 1; gates the third init stub",
+      "confidence": "medium",
+      "evidence": ["A9-08"]
+    },
+    {
+      "address": "0x02004F94",
+      "name": "init_stub_wait16",
+      "kind": "function",
+      "size": 28,
+      "comment": "copied to 0x01FF8000; spin on two u16 registers",
+      "confidence": "medium",
+      "evidence": ["A9-09"]
+    },
+    {
+      "address": "0x02004FD4",
+      "name": "init_stub_handshake",
+      "kind": "function",
+      "size": 40,
+      "comment": "copied to 0x01FF8000; wait for [r1] to change then increment [r0]",
+      "confidence": "medium",
+      "evidence": ["A9-09"]
+    },
+    {
+      "address": "0x02004FFC",
+      "name": "init_stub_toggle_04004004",
+      "kind": "function",
+      "size": 52,
+      "comment": "copied to 0x01FF801C; toggles bit0 of u16 at 0x04004004 per r0",
+      "confidence": "medium",
+      "evidence": ["A9-09"]
+    },
+    {
+      "address": "0x02005124",
+      "name": "NitroMain",
+      "kind": "function",
+      "size": null,
+      "comment": "SDK main (THUMB); entered via odd address 0x02005125, lr=0xFFFF0000",
+      "confidence": "high",
+      "evidence": ["A9-10", "A9-11"]
+    }
+  ]
+}

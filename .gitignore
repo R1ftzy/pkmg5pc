@@ -1,0 +1,59 @@
+# ROMs and game content (never commit)
+roms/
+*.nds
+*.srl
+*.sav
+*.dsv
+extracted/
+bios/
+bios9.bin
+bios7.bin
+firmware.bin
+*.idb
+*.i64
+*.gpr
+*.rep
+
+# Emulator savestates (full game memory: proprietary content)
+*.nss
+*.ml[0-9]
+*.dst
+
+# Generated title banks (derived from the user's ROM; regenerable, never commit)
+banks/
+
+# Build output
+build/
+build*/
+out/
+cmake-build-*/
+CMakeUserPresets.json
+
+# Editor / OS
+.vs/
+.vscode/
+.idea/
+*.user
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Compiled artifacts
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+*.pdb
+*.ilk
+
+# Local caches
+.cache/
+*.log
+
+# Vendored ndsrecomp: regenerable generated banks + local perf output
+third_party/ndsrecomp/generated/
+third_party/ndsrecomp/perf-results/

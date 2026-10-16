@@ -1,0 +1,36 @@
+pkmnbwb
+=======
+
+This project is a clean native reimplementation of the Generation V Pokémon
+games for PC. It ships NO copyrighted game content.
+
+- No ROMs, save files, graphics, audio, text, scripts, models, or any other
+  extracted game assets are included in this repository or its release builds.
+- The user must supply their own legally obtained ROM files. All game content
+  is read from those ROMs at build time or run time on the user's machine.
+- "Pokémon", "Nintendo DS", and related names are trademarks of Nintendo,
+  Creatures Inc., GAME FREAK inc., and The Pokémon Company. This project is
+  not affiliated with or endorsed by any of them.
+- Reverse-engineered knowledge (file formats, addresses, decompiled logic) is
+  documented for interoperability; the content it describes is not distributed.
+
+Licensing
+---------
+
+This project is licensed **GPL-3.0-or-later** (see `LICENSE`).
+
+Third-party components adopted as-is (keep their notices; no content from any
+upstream is redistributed here):
+
+- `ndsrecomp` (RetroPortingToolKit/ndsrecomp, tag `v0.6.10`) — its own code is
+  **MIT**; its melonDS-derived trees (3D geometry engine software + compute,
+  Wi-Fi device model and net glue, `oracle/`) are **GPL-3.0-or-later**.
+- `arm-recomp-core` (mstan/arm-recomp-core) — **MIT**.
+- `freebios` (mstan/freebios, DraStic BIOS replacement) — **BSD-2-Clause**.
+- `toml++` (marzer/tomlplusplus) — **MIT**.
+- SDL3 (window/input/audio) — **Zlib**; if used.
+- libpcar headers (optional, `NDS_ENABLE_PCAP_BACKEND`) — **BSD-2-Clause**.
+
+GPL-3.0-or-later code is kept behind the bridge headers
+`runner/src/gpu3d.h` and `runner/src/wifi.h`. Per-module license attribution in
+upstream `THIRD_PARTY_ATTRIBUTION.md` applies.

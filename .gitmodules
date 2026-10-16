@@ -1,0 +1,6 @@
+[submodule "third_party/ndsrecomp"]
+	path = third_party/ndsrecomp
+	url = https://github.com/RetroPortingToolKit/ndsrecomp.git
+[submodule "third_party/ndsrecomp/external/arm-recomp-core"]
+	url = https://github.com/mstan/arm-recomp-core.git
+	path = third_party/ndsrecomp/external/arm-recomp-core
