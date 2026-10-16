@@ -23,6 +23,13 @@ shadow maps, native 60 fps overworld, New Game+ — see `Plan.md`).
 
 **Target platform:** Nintendo DS / NDSi, ARM9 (ARMv5TE) + ARM7 (ARMv4T).
 
+**Host targets:** Windows and Linux today. **Android and web (WebAssembly) are
+recorded late goals** (`Plan.md` M10) — not scheduled, and not a reason to add
+abstractions now, but constraints not to foreclose: game logic stays away from
+OS/GPU APIs (§5), nothing may depend on run-time code generation (a web build
+cannot host it — `docs/adr/0003-tier3-interpreter-policy.md`), and a web build
+must take the user's own ROM as a local file, never host or fetch it (§2.5).
+
 ## 2. Legal rules — read before touching anything
 
 These are hard constraints. Violating them can kill the project.
@@ -68,7 +75,7 @@ pkmnbwb/
 │  ├─ symbols/            # function/globals names (JSON/IDC/Ghidra)
 │  └─ evidence/           # exported REA evidence bundles
 ├─ rom/                   # ROM & Nitro format layer (NitroFS/NARC/codecs)
-├─ platform/              # win32/linux window, input, fs, audio device
+├─ platform/              # win32/linux now; android/web later (M10) — window, input, fs, audio device
 ├─ render/                # modern renderer + DS-GE emulation layer
 ├─ game/                  # recompiled/reimplemented game logic
 ├─ launcher/              # main menu, ROM selection, version switching

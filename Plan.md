@@ -332,6 +332,42 @@ not change game logic results (verified by save/frame comparisons).
 **Done when:** a completed save can start either a harder same-title run or a
 cross-title B2W2 run with the previous party.
 
+### M10 — Later host platforms: Android, then web (far future, not scheduled)
+
+Recorded so that earlier decisions do not accidentally foreclose them. **Not a
+commitment**, not a date, and not a reason to add abstraction now; it sits after
+M8/M9 and after the core port (M6). The design constraints below are the part
+that binds *today*.
+
+**Android (first of the two, if either).** Game logic is already hardware-free
+(§5), the runner is portable C++20 and SDL3 targets Android, so this is a
+platform job rather than a rewrite: an activity/launcher that takes the user's
+own ROM through the system file picker, plus touch/audio/window and a
+Vulkan-or-GL backend behind `render/backend.h`. Things to weigh when the time
+comes: the GPL-3.0 melonDS GE/Wi-Fi subtrees must keep compiling for the target
+ABI, NDK packaging must not bundle ROM content, and save I/O must go through the
+M6 byte-exact path on shared storage.
+
+**Web (WebAssembly).** Same ROM-at-runtime posture: the page must never host,
+fetch, or relay ROM content (`AGENTS.md` §2.5); the user selects their own ROM
+locally. Three consequences worth keeping in mind *now*:
+
+- **No runtime code generation is possible on web.** Emscripten cannot host the
+  runner's live-overlay compiler path, and WASM has no JIT seam. This is a
+  second, independent reason `docs/adr/0003-tier3-interpreter-policy.md` is
+  load-bearing: ahead-of-time banks are the only execution strategy that can
+  ever ship on web.
+- Threads need `SharedArrayBuffer` (COOP/COEP), so the runner's dual-CPU
+  scheduler and threaded compositor would need a pthreads or single-thread
+  build, and the audio device a web backend.
+- GPU: a WebGPU (or GL/WebGL2) backend behind the same `render/backend.h` seam;
+  assume the DS GE path ships software-only first. GPL-3.0 plus WASM means
+  serving the binary is distribution, so corresponding source must ship with it.
+
+**Done when:** each platform boots a user-supplied ROM to a navigable main menu
+from one launcher, with no ROM content in the artifact and no runtime
+compilation.
+
 ---
 
 ## 4. Cross-cutting concerns
@@ -377,6 +413,8 @@ cross-title B2W2 run with the previous party.
   family = static recompilation (option 1: faithful floor).
 - **D8:** BIOS handling — **resolved: HLE SWIs via `freebios` (BSD-2) by
   default**; a user-supplied BIOS is optional, never shipped.
+- **D9:** Later platforms (M10) — Android before web, or web first? Unresolved
+  and deliberately so; nothing is scheduled until M6 is met.
 
 ---
 
@@ -399,6 +437,17 @@ Do not vendor or copy their content; cite and reimplement.
 ## 8. Progress log
 
 Newest first. Keep entries short; details and evidence live in `re/notes/`.
+
+- **2026-10-16 (late platforms recorded; bring-up presets added)** — `Plan.md`
+  gains **M10: Android, then web (WebAssembly)** as *recorded, unscheduled*
+  host targets — far future, after M8/M9. The part that binds now: no run-time
+  code generation anywhere (a web build cannot host it, a second reason
+  `docs/adr/0003-tier3-interpreter-policy.md` is load-bearing), no hosting or
+  fetching of ROM content (a web build takes the user's own local file), the HAL
+  seam stays the only path to devices, and GPL-3.0 source ships with any WASM
+  binary. `AGENTS.md` §1 states the same. Also added
+  `windows-relwithdebinfo` / `linux-relwithdebinfo` presets, because every
+  bring-up measurement so far came from an `-O0` Debug build.
 
 - **2026-10-16 (bring-up review: the first-screen plan is fixed)** — a design
   review settled the M2.3→M2.5 push and wrote it into the M2 preamble: target is
