@@ -6,7 +6,9 @@
 # assumes: generated title banks plus a runner configured with
 # PKMNG5PC_BUILD_RUNNER=ON (which supplies SDL3).
 #
-# Only Black is banked today, so the ROM defaults to the Black image in roms/.
+# Black is the default title, so the ROM defaults to the Black image in roms/.
+# Other banked titles (White, Black 2, White 2) run with -Rom <path>; the runner
+# registers their bank group by ROM SHA-1.
 #
 # Usage:
 #   pwsh tools/play.ps1
@@ -97,7 +99,7 @@ if (-not $Rom) {
     $Rom = $candidates[0].FullName
   } else {
     $names = ($candidates | ForEach-Object { "  $($_.Name)" }) -join "`n"
-    Fail "no Black ROM (game code IRBO) found in roms/ - only Black is banked so far.`nPass -Rom <path>. Candidates:`n$names"
+    Fail "no Black ROM (game code IRBO) found in roms/ - pass -Rom <path> to run another banked title (White, Black 2, White 2).`nCandidates:`n$names"
   }
 }
 if (-not (Test-Path -LiteralPath $Rom)) { Fail "no such ROM: $Rom" }

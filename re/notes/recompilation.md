@@ -863,3 +863,57 @@ Same flags, same (Debug) configuration; logs in `banks/bench-*.log`.
   `banks/backup/black.toml.working` (with a `.patch` of the same), and the seed
   files are untouched.
 
+### All four titles boot to the intro and the 3D title screen (2026-10-16)
+
+- **Observation (a bank per title).** `pkmn_bankgen` was run on the other three
+  ROMs, each with **no per-title config** - there is no `re/config/<title>.toml`
+  for them yet, so no `[[alias]]`/seed work - so each got the plain static bank.
+
+  | title | game code | bank dir | ARM9 fns | ARM7 fns | bank ROM SHA-1 |
+  | --- | --- | --- | --- | --- | --- |
+  | Black | `IRBO` | `banks/black` | 7175 (5265 + 937 seeds) | 49 | `26ad0b99…` |
+  | White | `IRAO` | `banks/white` | 5265 | 49 | `bc696a0d…` |
+  | Black 2 | `IREO` | `banks/black2` | 5865 | 49 | `e51e6dfb…` |
+  | White 2 | `IRDO` | `banks/white2` | 5865 | 49 | `b5d7490b…` |
+
+  Evidence: `banks/bankgen-{white,black2,white2}.log`. The ROM SHA-1 each pair
+  records as its `identity sha1` matches the ROM (`bankgen` prints it against
+  the actual file), and the runner registers a group only when the booted ROM's
+  SHA-1 matches, so a mismatched pair fails closed rather than half-running.
+  White shares Black 2's ARM7 image (`36425935…` in both) and White 2 shares it
+  too, the same sharing the static notes record for the pairs. Black's bank is
+  the only one carrying per-title seeds; its numbers are the post-bisect ones
+  above.
+
+- **Observation (one runner, four groups).** `nds_runner` was then reconfigured
+  with the runner's multi-title form - `NDS_TITLE_BANK_DIRS` /
+  `NDS_TITLE_ROM_SHA1S`, the parallel lists with the three extra dirs next to
+  Black's, matching its own `NDS_TITLE_BANK_DIR`/`NDS_TITLE_ROM_SHA1` - and
+  rebuilt (`banks/build-4title.log`), so one binary carries all four bank groups
+  and selects by the booted ROM's SHA-1.
+
+- **Observation (ran fine, by hand, live).** The three extra titles were played
+  on the live window (`--interactive` via `tools/play.ps1 -Rom <path>`): the
+  intro cinematic runs through, and the **3D title screen** renders (the title's
+  logo/legendary scene is drawn by the GE path), the same visible sequence Black
+  shows. A headless `tools/runwatch.py` pass on White also runs past the intro
+  (400 sampled states to t≈94.8 s, `banks/runwatch-white.out`,
+  `banks/timeline-white.jsonl`).
+
+- **Observation (B2W2's ARM9 bank shape).** The B2W2 ARM9 bank is 5865
+  functions and Thumb-dominated (326 ARM / 5539 Thumb), against BW's 5265
+  (4750 / 515) - an engine delta, not a coverage regression. The pair shares an
+  ARM9 *size* band but not an image (Black 2's identity is `d01b69ba…`, White
+  2's `19cb08a6…`), so they are banked separately.
+
+- **Inference (high).** Banked boot needs no per-title work beyond running
+  `bankgen` on the ROM; the boot/intro/title path is title-independent. The
+  per-title config machinery (aliases, seeds) is a coverage refinement, not a
+  precondition for the title to render.
+
+- **Unknown / scope.** White, Black 2 and White 2 were **not** driven past the
+  title screen - the A-press menu was validated on Black only. Whether the ARM7
+  alias problem (above) and the `gpu2d` wedge behave the same on the other three
+  was not measured, and no per-title coverage manifest was read. Linux remains
+  unverified for all four.
+

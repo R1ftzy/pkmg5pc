@@ -138,6 +138,8 @@ build/windows-debug/tools/pkmn_bankgen.exe \
 
 Only ARM9 + ARM7 static banks are generated. Overlays are deliberately left to the runner's runtime live-overlay path.
 
+Run step 3 **once per ROM you own**; each run writes its own `banks/<title>/` and prints the directory to pass as `NDS_TITLE_BANK_DIR`. Because the runner registers one bank group per ROM SHA-1 (see step 4), a single runner binary can carry several titles at once.
+
 The ARM7 `[[alias]]` entries in `re/config/black.toml` are currently **commented out** (with the reasoning at the site): declaring them hangs the boot, so the generated ARM7 bank holds only the 49 discovered functions. The ARM9 half of the config is on. See `re/notes/recompilation.md` §"The ARM7 alias banks".
 
 ### 4. Configure and build with the runner
@@ -158,7 +160,23 @@ Two cache variables select which ROM the banks belong to:
 | `PKMNG5PC_BANKS_DIR` | `banks/black` | bank directory from step 3 |
 | `PKMNG5PC_TITLE_ROM_SHA1` | Black's SHA-1 | the ROM those banks came from |
 
-For White / Black 2 / White 2, point both at that title's bank dir and SHA-1; the runner registers a bank group only for a ROM whose SHA-1 matches.
+That pair wires **one** title (Black). The runner also accepts a **multi-title**
+form, and that is what the current `-relwithdebinfo` binary is configured with:
+`NDS_TITLE_BANK_DIRS` and `NDS_TITLE_ROM_SHA1S` are parallel semicolon lists of
+extra bank directories and their ROM SHA-1s (the runner's own variables,
+passed through as-is). Run step 3 once per ROM, then:
+
+```sh
+cmake --preset windows-relwithdebinfo -DPKMNG5PC_BUILD_RUNNER=ON \
+    -DNDS_TITLE_BANK_DIRS="banks/white;banks/black2;banks/white2" \
+    -DNDS_TITLE_ROM_SHA1S="<white>;<black2>;<white2>"      # each title's SHA-1
+cmake --build --preset windows-relwithdebinfo
+```
+
+At boot the runner registers the group whose ROM SHA-1 matches the ROM being
+run, so one binary serves all four titles; a group whose SHA-1 does not match
+is left unregistered (`pkmn_bankgen` prints each bank's ROM SHA-1, so the cache
+values come straight from the four step-3 runs).
 
 ### 5. Run
 
@@ -170,7 +188,7 @@ pwsh tools/play.ps1
 sh tools/play.sh
 ```
 
-`tools/play` finds the built runner, picks the Black ROM in `roms/` (the only banked title so far), checks that the banks exist, and opens the live SDL window with the correct boot flags. Either script's `--help` lists everything; the ones worth knowing:
+`tools/play` finds the built runner, picks the Black ROM in `roms/` by default, checks that the banks exist, and opens the live SDL window with the correct boot flags. Run another title with `--rom <path>`: the runner registers that ROM's bank group by SHA-1 at boot. Either script's `--help` lists everything; the ones worth knowing:
 
 | Option | Effect |
 | --- | --- |
@@ -209,7 +227,7 @@ build/windows-relwithdebinfo/third_party/ndsrecomp/runner/nds_runner.exe \
 
   Screenshots are ROM-derived output: keep them in the git-ignored `banks/` tree.
 
-Status: the pipeline is verified end-to-end — banks generate, link, and register against the ROM SHA-1 at run time, both CPUs execute, and the game boots from your ROM all the way to its **navigable main menu**. `tools/play` opens the live SDL window: the top screen shows the Pokémon Company + Nintendo boot splash, the intro cinematic (Game Freak logo, castle/throne, Zekrom, cast), the title screen, and then the four-entry startup menu — NEW GAME / MYSTERY GIFT / NINTENDO WFC SETTINGS / MIC TEST — after an **A** press (Start does not advance the title). The selection bar moves under the D-pad, and A opens sub-screens (e.g. MYSTERY GIFT's own menu, with "Welcome to Mystery Gift!" on the bottom screen). This is **M2.5's gate, met 2026-10-16 on a live window** (Windows; Linux unverified). Presented frames run at roughly 45–50 per second (measured from the frontend's own soak counters): live and watchable, but below the guest's 59.83 Hz.
+Status: the pipeline is verified end-to-end — banks generate, link, and register against the ROM SHA-1 at run time, both CPUs execute, and the game boots from your ROM all the way to its **navigable main menu**. **All four titles boot to their intro and 3D title screen** (White, Black 2 and White 2 were played through the intro and watched on their title screens on a live window on 2026-10-16, each with its own bank group in the same runner); Black is the title driven all the way through the menu. `tools/play` opens the live SDL window: the top screen shows the Pokémon Company + Nintendo boot splash, the intro cinematic (Game Freak logo, castle/throne, Zekrom, cast), the title screen, and then the four-entry startup menu — NEW GAME / MYSTERY GIFT / NINTENDO WFC SETTINGS / MIC TEST — after an **A** press (Start does not advance the title). The selection bar moves under the D-pad, and A opens sub-screens (e.g. MYSTERY GIFT's own menu, with "Welcome to Mystery Gift!" on the bottom screen). This is **M2.5's gate, met 2026-10-16 on a live window** (Windows; Linux unverified). Presented frames run at roughly 45–50 per second (measured from the frontend's own soak counters): live and watchable, but below the guest's 59.83 Hz.
 
 Two known limitations sit between here and M3:
 
@@ -232,7 +250,7 @@ Place your own legally obtained ROMs in `roms/` (git-ignored). Any dump filename
 roms/<your-rom>.nds
 ```
 
-Supported titles are the USA/EU NDSi-Enhanced dumps of Black, White, Black 2 and White 2. Dumps are referred to by path only; no dump's release filename is recorded in this repo.
+Supported titles are the USA/EU NDSi-Enhanced dumps of Black, White, Black 2 and White 2. All four boot to their intro and 3D title screen today (Black is verified further, to the main menu). Dumps are referred to by path only; no dump's release filename is recorded in this repo.
 
 No ROM is ever committed, and no ROM is required to build or for CI.
 

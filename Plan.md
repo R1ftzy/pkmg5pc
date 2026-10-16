@@ -97,6 +97,8 @@ Regardless of choice, the **HAL + renderer** work is shared.
 Legend: `[ ]` pending, `[~]` in progress, `[x]` done. Each milestone lists
 **acceptance criteria** (definition of done).
 
+Ordering after M6: M7, M8 (+M8.5), M9, M11, then M10 (far future).
+
 ### M0 — Foundation & RE toolchain — **status: done**
 
 - [x] Initialize git repo, `.gitignore` (ROMs, saves, extracted, build, idb).
@@ -160,7 +162,9 @@ deliverable is a screen you can see, and the work is ordered to remove false
 constraints first:
 
 - **Target:** Black only, through M2.3 (2D logo/title visuals) into M2.5
-  (title → Start → main menu). Overworld rendering stays in M3.
+  (title → Start → main menu). Overworld rendering stays in M3. *Widened
+  2026-10-16:* all four titles are now banked and reach the intro and 3D title
+  screen; only Black has been driven past the title.
 - **Gate = pixels, not fps.** The gate is a *correct frame*, proven from the
   runner's own debug server (`--serve`, `run_to_event`, `framebuffer A|B`), not
   a subjective look at a window. Throughput is a separate workstream.
@@ -284,11 +288,21 @@ screen visibly changes under it — but the box stays open for **touch** and for
       bottom screen, whose cursor then moves too. Keys were injected into the live
       frontend's real input path (`banks/probe_live.py`; montages
       `banks/shots-live/`).
+- [x] **All four titles boot** *(added 2026-10-16)*. One runner build registers a
+      bank group per ROM SHA-1; White, Black 2 and White 2 were played on a live
+      window through the intro cinematic to the **3D title screen** — the same
+      sequence Black shows (the test was exactly that: play the intro, watch the
+      title). No per-title work was needed: `bankgen` on the ROM was enough.
+      Evidence: `re/notes/recompilation.md` §"All four titles boot to the intro
+      and the 3D title screen".
 
 **Done when:** Black boots from the user's ROM to its navigable main menu on
 Windows and Linux, entirely through recompiled game code + the HAL (no emulator
 core, no direct OS/GPU calls from game code). **Windows: met 2026-10-16**, on a
-live `--interactive` window; the Linux side is unverified.
+live `--interactive` window; the Linux side is unverified. **All four titles met
+the weaker "boots to the 3D title screen" bar the same day** — the roadmap's
+M7 goal of all four running now has its first foothold (intro + title), with the
+menu/overworld still Black-only.
 
 ### M3 — Overworld vertical slice
 
@@ -337,30 +351,73 @@ in-game load accepts the exported file. **Enhancements may begin after this.**
 
 - [ ] Launcher UI: pick ROM, show detected title/game code.
 - [ ] One binary drives all four games; load the right title profile per ROM.
-- [ ] Cross-version content toggle (setting) — define exactly which data swaps.
 
 **Done when:** all four ROMs launch and play from one menu.
 
 ### M8 — Modern rendering (post-M6)
 
-- [ ] Widescreen/16:9 with correct dual-screen layout and safe areas.
-- [ ] Resolution scaling (render at target res, HUD in logical pixels).
-- [ ] Post-FX chain (bloom, color, AA, etc.) on the composited frame.
-- [ ] Optional: shadow maps for GE 3D scenes.
-- [ ] Native 60 fps overworld decoupled from game logic timing.
+- [ ] **Present/compositor:** our own layer that lays out and post-processes the
+      two DS screens, replacing the runner's fixed 512×768 top-over-bottom
+      present. One home for layout, aspect ratio, and post-FX. Owning this also
+      means our own present loop, decoupled from the runner's frontend.
+- [ ] **Layout:** dual-screen layout for arbitrary aspect ratios (stacked,
+      side-by-side, ultrawide) with safe areas. Game logic unchanged.
+- [ ] **Frame decoupling:** guest logic stays locked at 60 Hz (no speedup) while
+      presentation is uncapped and paced independently of the audio queue;
+      audio is resampled, not used as the clock (supersedes the current
+      "present clock = audio queue"; a new ADR is owed).
+- [ ] **3D resolution scaling:** render the DS GE above native resolution, with
+      an explicit policy for the 2D layers (BG/OBJ/fonts) versus the upscaled 3D
+      layer; a new ADR is owed.
+- [ ] **Post-FX:** bloom on the composited frame (low risk).
+- [ ] **Post-FX:** shadow maps for GE scenes. Risky — the DS exposes no
+      depth/normal buffer we control. Gate on a prototype before committing.
+- [ ] **Late:** interpolation above 60 Hz (synthesised in-between frames) and
+      full uncap/speedup. Large and uncertain; recorded, not scheduled.
 
 **Done when:** each effect is toggleable and off by default; enabling them does
 not change game logic results (verified by save/frame comparisons).
 
+### M8.5 — Single-screen UI mode (post-M8, large)
+
+Rework battles and menus to play on **one screen**, in the style of the
+Switch-era and older handheld titles. The dual-screen UI is baked into the
+game's own screens, so this is a presentation-and-flow project, not a setting.
+Explicitly late; not a dependency of M8.
+
+**Done when:** a full play session — overworld, battles, menus — is usable on a
+single screen with no information hidden behind the second display.
+
 ### M9 — New Game+ / New Game carry (post-M6)
 
-- [ ] NG+: restart with harder gym leaders/trainers while retaining the party.
-- [ ] Cross-title carry: finish Black → start Black 2 with the Black team.
-- [ ] Carry survives the `.sav` format (extend a sidecar, don't corrupt saves).
+- [ ] NG+ difficulty: restart a title with harder trainers/gym leaders while
+      retaining the party.
+- [ ] Cross-title carry ("New Game Continue"): a completed **Black** save starts
+      a **harder Black 2 / White 2** run carrying the Black team — a
+      continuation, not a fresh file.
+- [ ] Carry survives the `.sav` format via a sidecar; never corrupt or rewrite
+      the vanilla save.
 - [ ] Difficulty scaling table (levels, AI, items) configurable.
 
-**Done when:** a completed save can start either a harder same-title run or a
-cross-title B2W2 run with the previous party.
+The game's own **Unova Link / Memory Link** (native BW→B2W2 data transfer) is a
+different feature and is out of scope here.
+
+**Done when:** a completed Black save can start a harder same-title run or a
+harder B2W2 run carrying the previous party.
+
+### M11 — Nuzlocke mode (forced rules) — post-M6
+
+- [ ] Define the **hook seam** (an explicit interception point over RE'd game
+      functions) without editing any recompiled unit; record it as an ADR (a
+      game-logic interception policy) that reconciles with `AGENTS.md` §8.
+- [ ] Hook the encounter roll, faint/release, and in-battle item use to enforce
+      first-encounter-only, faint = permanent, no items in battle, and the dupes
+      clause (see D10 for which rules are mandatory vs toggleable).
+- [ ] Mode flag plus **sidecar** state; the vanilla `.sav` stays byte-exact.
+- [ ] Options surface in the launcher and/or in-game options.
+
+**Done when:** a Nuzlocke run enforces its rules in-game, and the save file
+written is byte-identical to what the unmodified game writes.
 
 ### M10 — Later host platforms: Android, then web (far future, not scheduled)
 
@@ -434,7 +491,8 @@ compilation.
   recompilation)**, 2026-10-14.
 - **D2:** Renderer abstraction: hand-rolled RHI vs bgfx vs sokol.
 - **D3:** C++20 (default) vs Rust for new isolated components.
-- **D4:** Which cross-version content is toggleable in M7, and default state.
+- **D4:** Cross-version content toggle — **resolved: dropped** (2026-10-16). The
+  launcher still drives all four ROMs; there is no per-title content swap.
 - **D5:** Scope of B2W2 post-game/Entralink for the initial port.
 - **D6:** Whether NG+ difficulty is data-only or adds new AI.
 - **D7:** Recompiler source — **resolved: adopt `ndsrecomp` @ `v0.6.10` as-is
@@ -445,6 +503,9 @@ compilation.
   default**; a user-supplied BIOS is optional, never shipped.
 - **D9:** Later platforms (M10) — Android before web, or web first? Unresolved
   and deliberately so; nothing is scheduled until M6 is met.
+- **D10:** Nuzlocke rule set — which rules are mandatory and which are toggleable
+  (dupes clause, shiny clause, gift/static encounters, level cap)? Unresolved:
+  the hook seam (M11) is decided, the rule manifest is not.
 
 ---
 
@@ -467,6 +528,39 @@ Do not vendor or copy their content; cite and reimplement.
 ## 8. Progress log
 
 Newest first. Keep entries short; details and evidence live in `re/notes/`.
+
+- **2026-10-16 (all four titles boot — White, Black 2 and White 2 join Black at
+  the 3D title screen)** — the three other ROMs were banked with plain
+  `pkmn_bankgen` (no per-title config exists for them yet: no `[[alias]]`/seed
+  work, 5265 / 5865 / 5865 ARM9 functions), and one `nds_runner` was rebuilt with
+  the runner's multi-title form (`NDS_TITLE_BANK_DIRS` / `NDS_TITLE_ROM_SHA1S`),
+  so a single binary registers a bank group per ROM SHA-1 and picks it at boot.
+  Played by hand on the live window, each runs the intro cinematic and renders
+  the **3D title screen** — the same visible sequence Black shows. **Scope:** the
+  test was the intro and the title screen only; the A-press main menu stays
+  Black-only, no per-title coverage manifest was read, and Linux is unverified.
+  Bank counts, the four ROM SHA-1s and the B2W2 ARM9 shape (326 ARM / 5539 Thumb):
+  `re/notes/recompilation.md` §"All four titles boot". This is M7's "all four
+  ROMs launch and play from one menu" at its first step.
+
+- **2026-10-16 (vision alignment: goals fixed, plan reshaped)** — sat down with
+  the maintainer and wrote the target picture into the plan. **Platforms:**
+  Windows/Linux → Android → web, and no other host targets are to be named.
+  **Frame rate:** the current goal is a locked 60 Hz logic rate with a decoupled,
+  uncapped present (no speedup); interpolation above 60 and full uncap are late
+  goals, recorded but unscheduled. **Cross-version content toggle: dropped**
+  (D4). **Cross-title carry** is now a concrete feature — a completed Black save
+  starts a *harder* B2W2 run with that Black team ("New Game Continue"); the
+  game's native Unova Link is explicitly a different, out-of-scope feature.
+  **Single-screen play** is recorded as a large late goal (M8.5), not early.
+  **Nuzlocke** is a new post-M6 milestone (M11) enforced through a **hook seam**
+  over RE'd game functions, with the vanilla save kept byte-exact; the rule
+  manifest is open (D10). **Post-FX** is split into bloom (low risk) and shadow
+  maps (prototype-gated). The **modding suite and modding agent skills are out of
+  scope** — a separate project. `AGENTS.md` §2 gains an **asset-provenance** rule:
+  AI is development-only and nothing AI-generated ships. Two ADRs are still owed:
+  game-logic interception (M11) and frame decoupling + scaling (M8), both
+  referenced from the milestones.
 
 - **2026-10-16 (M2.5 gate met — the main menu displays *and* is navigable, on a
   live window)** — the title takes an **A** press (**Start does not**) and opens

@@ -17,9 +17,11 @@ games for **Windows and Linux**:
 The ROM is whatever dump the user drops into `roms/`; refer to it by path
 (e.g. `roms/<your-rom>.nds`), never by a dump's release filename.
 
-Goals: both generations playable from **one launcher/menu**, cross-version
-content behind a setting, plus later enhancements (widescreen + post-FX,
-shadow maps, native 60 fps overworld, New Game+ — see `Plan.md`).
+Goals: both generations playable from **one launcher/menu**, plus later
+enhancements (any-aspect dual-screen layout, post-FX including bloom and shadow
+maps, decoupled presentation at a locked 60 Hz logic rate, New Game+, and a
+forced-rule Nuzlocke mode — see `Plan.md`). The **modding suite and modding
+agent skills are a separate project** and are out of scope for this repo.
 
 **Target platform:** Nintendo DS / NDSi, ARM9 (ARMv5TE) + ARM7 (ARMv4T).
 
@@ -55,6 +57,10 @@ These are hard constraints. Violating them can kill the project.
    GPL-incompatible or proprietary code. Keep GPL-derived code behind the
    established bridges (`runner/src/gpu3d.h`, `runner/src/wifi.h`) and record
    third-party licenses in `NOTICE`.
+8. **Asset provenance.** AI may generate development-only placeholders, but
+   **nothing AI-generated ships**. Shipping visual and audio assets are
+   hand-made by the user, and the build must not package AI-generated art,
+   audio, or models.
 
 If a task would require committing or redistributing game content, **stop and
 ask** — offer the ROM-at-runtime alternative instead.
@@ -219,6 +225,8 @@ FreeBIOS + placeholder retail BIOS banks, and builds. Generated banks under
 - Prefer reusing existing tools (Ghidra, DSPRE, Tinke, Nitro tooling) over
   writing a new parser for an established format.
 - Record Evidence IDs and tool versions in notes.
+- Ship or commit hand-made assets only; AI output is development-only and never
+  packaged.
 
 **Don't**
 - Commit ROMs, saves, or extracted assets.
@@ -226,6 +234,7 @@ FreeBIOS + placeholder retail BIOS banks, and builds. Generated banks under
 - Freeze an architectural decision that `Plan.md` marks as *open*; propose and
   ask instead.
 - Expand scope to the enhancement features before the core port milestone.
+- Commit or package AI-generated visual/audio assets.
 
 ## 11. Glossary
 
@@ -243,5 +252,7 @@ Format acronyms and shorthand used in this file. Project vocabulary
   cell / animation formats.
 - **SDAT/SSEQ/SBNK/SWAR/SWAV/STRM** — Nitro sound archive and its members.
 - **SCRCMD / script VM** — Gen 5 overworld script bytecode interpreter.
-- **NG+/NS+** — New Game Plus / New Game carry-over (project feature, `Plan.md`).
+- **NG+ / New Game Continue** — New Game Plus, and the cross-title carry that
+  starts a harder B2W2 run from a completed Black save (project features,
+  `Plan.md`).
 - **HAL** — hardware abstraction layer (see §5).
