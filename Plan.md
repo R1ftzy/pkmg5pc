@@ -263,15 +263,32 @@ generation, M6 save I/O, M7 launcher detection), not a runtime component.
 - [ ] SDAT/SSEQ playback via the ARM7 sound path.
 - [ ] **Gate:** intro/title runs with input and music.
 
+*Status 2026-10-16:* key input is exercised end-to-end through the frontend's own
+handler (real SDL events → HAL button state) by the M2.5 gate below, and the title
+screen visibly changes under it — but the box stays open for **touch** and for
+**audio** (SDAT/SSEQ is audio-structural only so far, not verified by ear).
+
 ##### M2.5 — Reach the main menu
 
-- [ ] Iterate remaining subsystems until title → Start → menu text renders.
-- [ ] **Gate:** **Black's main menu displays and is navigable. This is the first
-      real de-risking gate.**
+- [x] Iterate remaining subsystems until title → Start → menu text renders.
+      **Met 2026-10-16.** The title takes an **A** press (Start does not) and the
+      four-entry startup menu renders: NEW GAME (selection bar), MYSTERY GIFT,
+      NINTENDO WFC SETTINGS (wireless icon), MIC TEST — over the trainer art, with
+      legible text and engine B blank; no CONTINUE entry under `--no-save`.
+      Evidence: `re/notes/recompilation.md` §"M2.5 gate".
+- [x] **Gate:** **Black's main menu displays and is navigable. This is the first
+      real de-risking gate.** **Met 2026-10-16, on a live window.** The selection
+      bar walks NEW GAME → MYSTERY GIFT → NINTENDO WFC SETTINGS → MYSTERY GIFT
+      under Down/Down/Up, and A opens MYSTERY GIFT's own menu (RECEIVE GIFT /
+      CHECK THE CARD ALBUM / INFO / QUIT) with "Welcome to Mystery Gift!" on the
+      bottom screen, whose cursor then moves too. Keys were injected into the live
+      frontend's real input path (`banks/probe_live.py`; montages
+      `banks/shots-live/`).
 
 **Done when:** Black boots from the user's ROM to its navigable main menu on
 Windows and Linux, entirely through recompiled game code + the HAL (no emulator
-core, no direct OS/GPU calls from game code).
+core, no direct OS/GPU calls from game code). **Windows: met 2026-10-16**, on a
+live `--interactive` window; the Linux side is unverified.
 
 ### M3 — Overworld vertical slice
 
@@ -450,6 +467,49 @@ Do not vendor or copy their content; cite and reimplement.
 ## 8. Progress log
 
 Newest first. Keep entries short; details and evidence live in `re/notes/`.
+
+- **2026-10-16 (M2.5 gate met — the main menu displays *and* is navigable, on a
+  live window)** — the title takes an **A** press (**Start does not**) and opens
+  the four-entry startup menu — NEW GAME (selection bar), MYSTERY GIFT, NINTENDO
+  WFC SETTINGS, MIC TEST — on engine A with legible text over the trainer art and
+  engine B blank, no CONTINUE under `--no-save`, ~2.4 s after the press (a "press
+  start" beat, then a fade). Captured twice headless (`banks/shots-start/`,
+  `banks/shots-menu2/`) and then decisively **live**: `banks/probe_live.py` drives
+  the `--interactive` window closed-loop through the **frontend's own** key
+  injection (`frontend_input` `action=key` — real SDL KEYDOWN/KEYUP into the same
+  handler the keyboard uses) while the runner pumps the debug server
+  (`main.cpp:2273`), and `banks/shots-live/` shows the bar moving
+  NEW GAME → MYSTERY GIFT → NINTENDO WFC SETTINGS → MYSTERY GIFT under
+  Down/Down/Up, then A opening MYSTERY GIFT's own four-entry menu (RECEIVE GIFT /
+  CHECK THE CARD ALBUM / INFO / QUIT) with "Welcome to Mystery Gift!" on the
+  **bottom** screen, whose cursor then moves too. Both halves of the gate hold,
+  through recompiled guest code + the HAL. Probe caution: key injection is not
+  self-confirming — two of four title presses were ignored with no identified
+  difference in the driving method (one ignored press is 0.25 s in emulated time
+  from an accepted one), so claims must be read from the pixels. Details:
+  `re/notes/recompilation.md` §"M2.5 gate".
+
+- **2026-10-16 (the uncommitted bank regeneration could not boot Black — root
+  cause found: the ARM7 alias banks)** — `banks/black` regenerated at 15:30 from
+  the in-flight tree (the two ARM7 `[[code_copy]]` aliases plus the 1387 ARM7
+  seeds that §"Coverage" in `re/notes/recompilation.md` asks for;
+  `tools/bankgen/main.cpp` +250 lines, `tools/stage_title_config.py`, both
+  `re/config/black/seeds/*_unresolved.toml` folded in) left the ARM9 parked in the
+  crt0 wait-stub (`pc9=0x01FF8010`, `irq9=0 irq7=0`, `vblank9=0` at t=40 s) while
+  the **same runner** boots under `--force-tier3` and the **pre-regeneration**
+  bank archive boots normally — so the regression was in the banks, not the runner
+  and not the `NDS_GPU2D_THREADED=0` wedge workaround. **Bisected the same day**,
+  one regeneration + rebuild per step, all three builds boot-tested: aliases off
+  (every seed file left on) **boots** — `vblank9` 41 → 2376, splash
+  `b45f04f74705`; aliases on with the ARM7 seed files off **hangs** — so it is the
+  ARM7 **alias bank's own code**, not the seeds, which cannot even be applied
+  without the aliases (all 1387 drop as "outside image", leaving the original
+  49-function ARM7 bank). The ARM9 half of the change is sound: 5265 → 7175
+  functions from its 937 seeds, and it boots. `re/config/black.toml` now keeps the
+  whole change except the two `[[alias]]` blocks, commented out with the reasoning
+  at the site; `banks/black` was regenerated from it and `nds_runner` rebuilt, so
+  the binary on disk boots. The mechanism is still open — see
+  `re/notes/recompilation.md` §"The ARM7 alias banks".
 
 - **2026-10-16 (the game is on screen — live window)** — the runner's
   `--interactive` frontend had never been exercised; it opens a 512×768

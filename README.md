@@ -6,6 +6,50 @@ guidance and `Plan.md` for the roadmap.
 
 This repository contains **no game content**. You must own and supply the ROMs.
 
+## Quick start (Windows)
+
+```sh
+# 1. Bootstrap the recompiler submodule (once; inits ndsrecomp, builds nds_recompile)
+pwsh tools/bootstrap_ndsrecomp.ps1
+
+# 2. Build this project's host tooling (CMake >= 3.24 + clang++ + ninja on PATH)
+cmake --preset windows-debug
+cmake --build --preset windows-debug
+
+# 3. Put your own Black ROM in roms/ (any filename; see "ROMs")
+
+# 4. Generate the title banks from your ROM (writes the git-ignored banks/black/)
+build/windows-debug/tools/pkmn_bankgen.exe "roms/<your-rom>.nds" banks/black `
+    --title-config re/config/black.toml `
+    --recompiler third_party/ndsrecomp/recompiler/build/nds_recompile.exe
+
+# 5. Configure and build the runner (first configure clones and builds SDL3)
+cmake --preset windows-relwithdebinfo -DPKMNG5PC_BUILD_RUNNER=ON
+cmake --build --preset windows-relwithdebinfo
+
+# 6. Play
+pwsh tools/play.ps1
+```
+
+**Controls** (the live window's keyboard map):
+
+| Keys | Button |
+| --- | --- |
+| `arrows` | D-pad |
+| `Z` / `X` | A / B |
+| `A` / `S` | Y / X |
+| `Q` / `W` | L / R |
+| `Enter` | Start |
+| `Backspace` | Select |
+| `Esc` | quit |
+
+The bottom-screen window is the touchscreen.
+
+On Linux / macOS the same steps use `sh tools/bootstrap_ndsrecomp.sh`, the
+`linux-*` presets, the tools without the `.exe` suffix, and `sh tools/play.sh`.
+The full detail behind each step is in [Build](#build),
+[Runner](#runner-the-bootable-build) and [Run](#5-run).
+
 ## Layout
 
 - `rom/` — ROM & Nitro format layer (headers, NitroFS/FNT/FAT, NARC, codecs)
@@ -100,6 +144,7 @@ This produces `pkmn_bankgen`, which step 3 needs.
 ```sh
 build/windows-debug/tools/pkmn_bankgen.exe \
     "roms/<your-rom>.nds" banks/black \
+    --title-config re/config/black.toml \
     --recompiler third_party/ndsrecomp/recompiler/build/nds_recompile.exe
 ```
 
@@ -107,7 +152,7 @@ build/windows-debug/tools/pkmn_bankgen.exe \
 
 | Output | Meaning |
 | --- | --- |
-| `irbo_arm9_main_00..07.c`, `irbo_arm9_main_dispatch.c` | ARM9 bank: 5265 functions, 8 shards |
+| `irbo_arm9_main_00..07.c`, `irbo_arm9_main_dispatch.c` | ARM9 bank: 7175 functions (5265 discovered + the 937 seeded entry points), 8 shards |
 | `irbo_arm7_main_00..07.c`, `irbo_arm7_main_dispatch.c` | ARM7 bank: 49 discovered functions |
 | `bin/*.bin`, `config/*.toml` | decoded images and recompiler configs |
 
@@ -115,12 +160,22 @@ build/windows-debug/tools/pkmn_bankgen.exe \
 point come from the header and overlay table), so nothing ROM-derived is
 hand-written or committed. Options:
 
+- `--title-config <file>` — apply the checked-in per-title config
+  (`re/config/<title>.toml`): its `[[alias]]` entries become recompiler
+  `[[code_copy]]` ranges for modules the game relocates, and its `[[seed_file]]`
+  entries replay observed Tier-3 entry points as `[[entry_point]]` seeds. All of
+  these are addresses only — no ROM bytes.
 - `--shards N` — split the bank into N body shards (default 8; **minimum 2**).
 - `--emit-only` — write `bin/` + `config/` and stop before running the
   recompiler.
 
 Only ARM9 + ARM7 static banks are generated. Overlays are deliberately left to
 the runner's runtime live-overlay path.
+
+The ARM7 `[[alias]]` entries in `re/config/black.toml` are currently **commented
+out** (with the reasoning at the site): declaring them hangs the boot, so the
+generated ARM7 bank holds only the 49 discovered functions. The ARM9 half of the
+config is on. See `re/notes/recompilation.md` §"The ARM7 alias banks".
 
 ### 4. Configure and build with the runner
 
@@ -177,14 +232,22 @@ Controls: `arrows` = D-pad, `Z`/`X` = A/B, `A`/`S` = Y/X, `Q`/`W` = L/R,
 `Enter` = Start, `Backspace` = Select, `Esc` = quit. The bottom-screen window is
 the touchscreen.
 
-The underlying invocation, if you want to drive it yourself:
+The underlying invocation, if you want to drive it yourself (`tools/play` sets
+`NDS_GPU2D_THREADED=0` for you — see the workaround note below):
 
 ```sh
+NDS_GPU2D_THREADED=0 \
 build/windows-relwithdebinfo/third_party/ndsrecomp/runner/nds_runner.exe \
     bios 250000000 --boot direct --generated-firmware --freebios \
     --rom "roms/<your-rom>.nds" \
     --interactive
 ```
+
+- `NDS_GPU2D_THREADED=0` puts the 2D raster on the emulation thread. The default
+  threaded scanline path wedges one scheduler round at ≈83.69 s of emulated time
+  (vendored `gpu2d` defect; the two paths are documented as the same
+  latch/execute sequence), so all long runs set it. This trades some wall time
+  for correctness, not pixels.
 
 - The two **positional** arguments are the BIOS directory (a scratch dir; the
   runner writes a generated Wi-Fi identity into it) then the **ARM9 cycle
@@ -219,15 +282,28 @@ build/windows-relwithdebinfo/third_party/ndsrecomp/runner/nds_runner.exe \
   Screenshots are ROM-derived output: keep them in the git-ignored `banks/` tree.
 
 Status: the pipeline is verified end-to-end — banks generate, link, and register
-against the ROM SHA-1 at run time, both CPUs execute, and the ARM9 reaches
-NitroSDK init. **The game renders in a live window:** `tools/play` opens the SDL
-view, engine A enables BG1 at `vblank9=240` (~4.3 s of emulated time), and the
-top screen shows the Pokémon Company + Nintendo boot splash with the bottom
-screen correctly blank. Presented frames run at roughly 45–50 per second
-(measured from the frontend's own soak counters), which is live and watchable
-but below the guest's 59.83 Hz. The run does **not** yet reach the title
-screen/menu: it stops progressing at ≈83.7 s of emulated time, at the end of the
-intro. See `re/notes/recompilation.md` and the M2.3 entries in `Plan.md`.
+against the ROM SHA-1 at run time, both CPUs execute, and the game boots from
+your ROM all the way to its **navigable main menu**. `tools/play` opens the live
+SDL window: the top screen shows the Pokémon Company + Nintendo boot splash, the
+intro cinematic (Game Freak logo, castle/throne, Zekrom, cast), the title screen,
+and then the four-entry startup menu — NEW GAME / MYSTERY GIFT / NINTENDO WFC
+SETTINGS / MIC TEST — after an **A** press (Start does not advance the title). The
+selection bar moves under the D-pad, and A opens sub-screens (e.g. MYSTERY GIFT's
+own menu, with "Welcome to Mystery Gift!" on the bottom screen). This is **M2.5's
+gate, met 2026-10-16 on a live window** (Windows; Linux unverified). Presented
+frames run at roughly 45–50 per second (measured from the frontend's own soak
+counters): live and watchable, but below the guest's 59.83 Hz.
+
+Two known limitations sit between here and M3:
+
+- The vendored runner's threaded 2D path wedges one scheduler round at ≈83.69 s
+  of emulated time. `tools/play` works around it with `NDS_GPU2D_THREADED=0`
+  (see the invocation note above).
+- The two ARM7 `[[alias]]` entries in `re/config/black.toml` are commented out:
+  declaring them hangs the boot, so the ARM7 bank holds only the 49 discovered
+  functions. The ARM9 seeds are unaffected and on.
+
+See `re/notes/recompilation.md` and the M2.3/M2.5 entries in `Plan.md`.
 
 ### Troubleshooting
 

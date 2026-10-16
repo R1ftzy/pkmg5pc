@@ -664,8 +664,202 @@ Same flags, same (Debug) configuration; logs in `banks/bench-*.log`.
 - **Inference (high).** Both long-open coverage gaps are now *specified* rather
   than guessed: the ARM7 alias needs two alias banks, the ARM9 holes need seeds.
   Neither needs a recompiler fork and neither needs anyone's dumped bytes.
+  **Update (2026-10-16):** the ARM9 half is implemented and boots (5265 → 7175
+  functions); the ARM7 aliases are **not** usable as-is — declaring them hangs the
+  boot, so they are staged in `re/config/black.toml` but commented out. See
+  §"The ARM7 alias banks are what stop the boot".
 - **Unknown.** How much Tier-3 load either change removes, and whether the
   `0x01FF8000` ITCM span (runtime-materialized, so not a ROM alias) needs its
   captured-bytes bank — which is ROM-derived output and therefore stays in the
   git-ignored area, regenerated locally from the user's own runs.
+
+### M2.5 gate: the title's A press opens the main menu (2026-10-16)
+
+- **Observation (the title).** Engine A carries the title screen - the
+  "Pokemon BLACK VERSION" logo, a `PRESS START` prompt, the Zekrom model and
+  "Developed by GAME FREAK inc." - with engine B blank, from about t=104 s.
+  `banks/shots-title/` holds 1647 montages out to t=169.87 s, but that capture
+  comes from a keyless `tools/runwatch.py` run, which is why it never leaves the
+  title: nothing was injected. Its log ends on the runwatch timeline line, and
+  the title runs on into the attract sequence - not a menu.
+- **Observation (the menu).** In the `banks/probe_start.py` run captured as
+  `banks/shots-start/`, a fade begins at 120.44 s, one frame is blank at
+  122.36 s, and from **t=122.70 s to t=136.48 s** the main menu is on engine A:
+
+  | entry | state |
+  | --- | --- |
+  | NEW GAME | highlighted (selection bar) |
+  | MYSTERY GIFT | |
+  | NINTENDO WFC SETTINGS | wireless icon |
+  | MIC TEST | |
+
+  Engine B stays blank, the trainer art is composited behind the list, and the
+  text is legible, so the font/decompression path renders
+  (`banks/shots-start/t00131.71s-ds.png`; engine A alone in
+  `t00131.71s-A.png`). There is no CONTINUE entry, which is correct for a run
+  started with `--no-save`.
+- **Observation (reproduced; A opens it, Start does not).** Re-driven on the
+  optimized runner (`banks/probe_menu.py` -> `banks/probe-menu.json`,
+  `banks/shots-menu2/`): **Start** (mask `0x3F7`) held 105.04-107.04 s changes
+  nothing, while **A** (mask `0x3FE`) held 109.046-111.046 s is followed by a
+  white flash at 109.12 s (all 49152 sampled engine-A pixels lit), a fully black
+  frame at 111.35 s, and the same four-entry menu from **t=111.69 s** to the end
+  of the run at 126.01 s. So the title -> menu delay is about 2.4 s: a "press
+  start" beat, then a fade. The `keys` mask is the active-low KEYINPUT layout
+  (`runner/src/io.cpp:2063` and `frontend.cpp:856`), so A is bit 0 and Start
+  bit 3.
+- **Observation (navigable, on the live window).** `banks/probe_live.py` ->
+  `banks/probe-live.json`, montages in `banks/shots-live/`. That run is decisive
+  for two reasons: it drives a **live** `--interactive` window (the M2.3
+  precedent) with no driver thread of its own - under `--interactive` the runner
+  *pumps* the debug server (`main.cpp:2273`) - and it injects keys through the
+  **frontend's own** handler (`frontend_input` `action=key`, `frontend.cpp:3839`,
+  i.e. real SDL `KEYDOWN`/`KEYUP` into the same path the keyboard uses, not a
+  `keys`-mask shortcut). It is closed-loop: it polls engine A until the title
+  profile appears (`lit_px` 25207, 164 colours at wall 100.6 s), presses `z` (A),
+  polls for the menu profile, and only then walks the cursor.
+
+  | montage | press before it | engine A | engine-A sha256 |
+  | --- | --- | --- | --- |
+  | `01-menu-01` | the press that opens it | NEW GAME selected | `6a2913c0ff842d29...` |
+  | `02-down1-02` | Down | MYSTERY GIFT selected | `9ed9d60c6c63d3bb...` |
+  | `03-down2-03` | Down | NINTENDO WFC SETTINGS selected | `d17237f30344d7af...` |
+  | `04-up1-04` | Up | MYSTERY GIFT selected again | `e89784ac1d4be49d...` |
+  | `05-activate-05` | A | MYSTERY GIFT's own menu - RECEIVE GIFT / CHECK THE CARD ALBUM / INFO / QUIT, RECEIVE GIFT selected - with "Welcome to Mystery Gift!" over a cyan gradient on engine B | `9079d293b84fef30...` |
+  | `06-down1-06` | Down | INFO selected | `db4e3026d525a905...` |
+  | `07-down2-07` | Down | RECEIVE GIFT again (the list wraps) | `bf862390268712cf...` |
+
+  The menu profile (`lit_px` 49039, 82 colours) arrives 2.9 s after the press
+  (wall 101.0 s -> 103.9 s), matching the ~2.4 s beat + fade above. Engine A
+  carries the trainer art behind the list and engine B is blank during the title
+  and the main menu; opening the submenu is the first time in these captures that
+  engine B carries game text.
+  Re-run on the **rebuilt final banks** - arm9 7175 functions from the 937 ARM9
+  seeds, arm7 49, the build left in place after the bisect below
+  (`banks/probe-live2.json`, `banks/shots-live2/`) - it reproduces exactly: the
+  menu, NINTENDO WFC SETTINGS (`d17237f30344d7af...`), the Mystery Gift submenu
+  (`9079d293b84fef30...`) and the wrap back to RECEIVE GIFT
+  (`bf862390268712cf...`) are bit-identical to the first run, which used the
+  transplanted pre-regeneration archive. The four frames that differ are the ones
+  carrying the animated cursor and the trainer art.
+- **Observation (the menu acts even when a press is lost).** Both runs whose A
+  press was ignored reach the **Mic Test screen** anyway, at the *next* press (a
+  Down): title "Mic Test", a Jigglypuff, "Say something into the microphone. The
+  Pokemon will start singing if it's working." and a BACK button, at t=124.25 s
+  (`banks/shots-nav/`) and t=113.72 s (`banks/probe-nav2.json`). That screen is
+  reachable only through the startup menu.
+- **Inference (high).** **M2.5's gate is met.** Black's main menu *displays* and
+  *is navigable*, from recompiled guest code, and the navigability was captured on
+  a live window through the frontend's real input path.
+- **Unknown.** Why a press is accepted sometimes and ignored others: two title
+  presses were ignored (120.08 s in `banks/probe-nav.json`, 108.562 s in
+  `banks/probe-nav2.json`) and two were accepted (109.046 s in
+  `banks/probe-menu.json`, and 120.33 s in the `probe_start.py` run behind
+  `banks/shots-start/`, whose press log was later overwritten). One accepted and
+  one ignored press are 0.25 s apart in emulated time, across runs, with no
+  identified difference in the driving method. A press therefore has to be
+  confirmed from the pixels rather than assumed - `banks/probe_live.py` polls the
+  frame profile before and after every press, and its retry loop was not needed
+  (the menu was detected on attempt 1 of 4). Untested candidates for the cause:
+  the guest latching presses through the key IRQ (`io.cpp:2069`) rather than
+  polling KEYINPUT, and the title state machine sampling input only at one point
+  in its own animation beat.
+- **Caveat (measurement).** `runwatch.frame_stats` counts pixels that are not
+  exactly `(0,0,0)`, and a blank engine B reads as a `(0,0,0)`/`(40,40,40)`
+  checkerboard, so `lit_px` is not a proxy for visible content: the mostly black
+  menu frame reports 49039 of 49152 "lit". Use the engine-A sha256 and the
+  montages, not `lit_px`.
+
+### Regenerating the banks with the coverage fixes as they stand stops the boot (2026-10-16)
+
+- **Observation (what changed).** `banks/black/` was regenerated at 15:30
+  (`banks/bankgen-black.log`) from the uncommitted working tree
+  (`re/config/black.toml`, `tools/bankgen/main.cpp` +250 lines,
+  `tools/stage_title_config.py`; the two `re/config/black/seeds/*_unresolved.toml`
+  files were folded in and deleted), which implements the previous section's
+  recommendation. The generated `banks/black/config/irbo_arm7_main.toml` now
+  declares `[[code_copy]] runtime_start=0x02FE0000 source_start=0x02391A58
+  size=0x00017000 name="arm7_alias_02fe0000"` and
+  `runtime_start=0x037F8000 source_start=0x02380644 size=0x00011000
+  name="arm7_alias_037f8000"`, plus 1387 ARM7 seed entry points. Those sources
+  were compiled into `nds_runner.exe` at 15:34-15:39.
+- **Observation (the A/B).** With them the ARM9 never leaves the crt0 relocated
+  wait-stub (`re/notes/arm9-init.md` A9-09): `pc9` sits at `0x01FF8010` /
+  `0x01FF8014` with `irq9=0 irq7=0 dma=0` and `vblank9=0` at t=40 s, and both
+  engines stay on one frame hash `4ae2e6e6e32d...`. That hash is not unique to the
+  failure - it is simply the nothing-drawn-yet uniform frame, which a healthy boot
+  shows for its first seconds too (`banks/probe-live.json` read 1) - so the
+  *persistence* is the diagnostic, not the value. `tools/play.ps1` reproduces it:
+  `frame_fnv=(f5c5169d40c04383,f5c5169d40c04383)` against the known-good
+  `(f462d3ff20fd83f4,06be2b0d14dc4383)`, ARM9 dispatch `total=5493067` against
+  ARM7 `168056747`.
+- **Observation (the runner is not implicated).** The same binary boots under
+  `--force-tier3` - `vblank9` 41/101/223/355 at t~1/2/4.07/6.27 s, splash hashes
+  `b45f04f74705` / `1ac6f38899e7` - and so does the pre-regeneration archive:
+  linking the 11:38 `build/windows-debug/.../libnds_banks.a` into
+  `build/windows-relwithdebinfo` yields a runner that boots and runs at about
+  0.78x realtime. That is the build behind `banks/shots-menu2/`, above.
+- **Inference (high).** The regression lives in the regenerated banks, i.e. in
+  the uncommitted bankgen/config change - not in the runner, and not in the
+  `NDS_GPU2D_THREADED=0` workaround.
+- **Bisected 2026-10-16 (see the next section).** The two ARM7 `[[code_copy]]`
+  aliases alone reproduce the hang, with the ARM7 seed files disabled; the seed
+  entry points are not implicated. The change was left uncommitted in the working
+  tree.
+- **Method note.** The banks are compiled *into* `nds_runner.exe`
+  (`Runner.cmake`, `PKMNG5PC_BANKS_DIR`, default `banks/black`), so a bank-source
+  change needs a runner rebuild, not just a regeneration. The archive swap above
+  is a build-directory state only; `cmake --build build/windows-relwithdebinfo
+  --target nds_banks` restores the current sources. `tools/play.ps1` is safe to
+  run against that state: it never regenerates banks, it only fails when
+  `banks/black` holds no `*_NN.c` bodies and prints the `pkmn_bankgen` command to
+  run (`tools/play.ps1:69`); the message text at lines 72-73 is that instruction,
+  not an invocation.
+
+### The ARM7 alias banks are what stop the boot (2026-10-16)
+
+- **Observation (three-way bisect, one runner binary).** Turning off only the two
+  `[[alias]]` blocks in `re/config/black.toml` and regenerating each time
+  (`banks/bankgen-bisect.log`, `banks/bankgen-bisect2.log`,
+  `banks/bankgen-final.log`):
+
+| config | arm7 bank | arm9 bank | boot |
+| --- | --- | --- | --- |
+| pre-regeneration, 01:58 (`banks/bankgen-verify.log`) | 49 fns | 5265 fns | healthy |
+| aliases on + ARM7 seeds on (15:30) | 3567 fns | 7175 fns | **hang** |
+| aliases on, ARM7 seed files off | 236 fns | 7175 fns | **hang** |
+| aliases off (all seed files on) | 49 fns | 7175 fns | healthy |
+
+  "Hang" is the state in the previous section (`pc9=0x01FF8010`, `vblank9=0`,
+  `pc7=0x00001078`, `irq9=0 irq7=0` at t=40 s). "Healthy" is `vblank9` 41 -> 2376,
+  the splash hash `b45f04f74705` at t=6.27 s and the intro frame at t=40 s
+  (`lit=43520`), read with `banks/fbprobe.py`.
+- **Observation (the seeds cannot be isolated from the aliases).** `bankgen` keeps
+  a seed only when it lies inside the image or inside a declared copy
+  (`tools/bankgen/main.cpp:486-501`), and all 1387 ARM7 seeds lie in the two alias
+  ranges. With the aliases off they are all dropped - "0 seed(s), 1387 dropped
+  outside image" - and the ARM7 bank returns to exactly the original 49 functions.
+  So "aliases off" and "ARM7 seeds off" give the same bank, and the discriminating
+  run is "aliases on, seed files off": it still hangs, from a 236-function bank.
+- **Inference (high).** The alias bank's own code is what hangs the boot. The 1387
+  ARM7 seeds are not implicated: they only ride along inside the alias ranges, and
+  the hang reproduces without them.
+- **Inference (high).** The ARM9 half of the same change is sound: 5265 -> 7175
+  functions from the 937 ARM9 seeds, and the boot is healthy with it in place.
+- **Unknown (the mechanism).** Where the alias bank goes wrong. One concrete lead:
+  in the healthy boot the ARM7 is *already* executing inside an alias range -
+  `a7=0x037FBAF8` at t=1.02 s, inside `0x037F8000` + `0x11000` - so the range is
+  where the ARM7 really runs, and there it runs correctly through the Tier-3
+  interpreter. With the alias declared, the ARM7 never reaches that address
+  (`a7=0x00001078` instead). Untested candidates: the CFG walk for a
+  `[[code_copy]]` range emitting mis-keyed or wrong functions; the runner's
+  bank/registration handling of a bank that also covers a copy range; and the copy
+  declaration perturbing the *main* bank's dispatch for neighbouring addresses.
+  This needs the alias path of the recompiler/bankgen looked at.
+- **Tree state (2026-10-16).** `re/config/black.toml` keeps the whole in-flight
+  change except the two `[[alias]]` blocks, which are commented out with the
+  reasoning at the site; `banks/black` was regenerated from that config and
+  `nds_runner` was rebuilt, so the binary on disk boots. The pre-bisect file is at
+  `banks/backup/black.toml.working` (with a `.patch` of the same), and the seed
+  files are untouched.
 
