@@ -160,6 +160,59 @@ clang (Release, Ninja). Target ROM: Black USA/EU NDSi, 256 MiB.
   not the ~2491 s recorded here — an unexplained ~35× internal inconsistency in
   that log, another reason to discard the numbers rather than quote them.)
 
+### Optimized build (2026-10-16) — the Debug caveat resolved
+
+Same command, same ROM, `cmake --preset windows-relwithdebinfo
+-DPKMNBWB_BUILD_RUNNER=ON` (whole runner and every bank shard at `-O2 -g`):
+
+| 30 M ARM9 cycles | Debug | RelWithDebInfo |
+| --- | --- | --- |
+| wall | 60.32 s | **4.98 s** |
+| scheduler (emulation) | 16.358 ms/1000 rounds → 4.38 s | **6.332 ms/1000 rounds → 1.69 s** |
+| fixed startup | ~55.9 s | **~3.3 s** |
+
+- **Observation.** Marginal throughput on the optimized build is **~17.7 M ARM9
+  cycles/s ≈ 26.4 % of real-time** (was ~6.3 % on Debug). Emulation is 2.6×
+  faster and the fixed pre-scheduler cost is 17× smaller.
+- **Observation.** Scheduler split at this budget is ARM9 2.515, **ARM7 2.387**,
+  devices 0.946 ms/1000 rounds — the ARM7 is now ~38 % of scheduler time rather
+  than the 71 % seen on Debug at 250 M, so coverage work still matters but is no
+  longer the whole story.
+- **Inference (resolves the startup-tax question).** The ~35 s ROM read and
+  ~12 s SHA-1 both collapse into the ~3.3 s fixed cost once optimized. **No local
+  patch series is warranted**; the vendored reader needs no change, and
+  `third_party/ndsrecomp` stays pristine with no exceptions.
+- **Observation.** `event_counts` exposes `insn9`/`insn7` and `cyc9`/`cyc7`
+  alongside the vblank counters, which makes emulated-time progress measurable
+  from the debug server alone (`tools/runwatch.py`).
+- **Observation (smoke run, 60 M cycles, `--serve`).** At vblank9=60 the ARM9 is
+  at `0x02076ED0` and at vblank9=120 at `0x020882D8` — different SDK addresses,
+  not one spinning routine — while both engines report `bgA=0000 objA=0` and a
+  uniform framebuffer (all 49152 pixels lit, identical hash on A and B, i.e. the
+  backdrop with no layer enabled). Emulated `cyc9` at vblank9=120 is 156.5 M.
+- **Unknown.** Whether a layer is ever enabled within tens of seconds of
+  emulated time; the long `runwatch` run decides it.
+
+### First visible frame (2026-10-16)
+
+- **Observation.** `tools/runwatch.py` sampled every 60 vblanks and stopped on
+  the first enabled layer (`banks/timeline-boot.jsonl`). At vblank9 = 60/120/180
+  both engines report `bg=0000 obj=0` and the framebuffers are identical
+  (`sha256 4ae2e6e6…`, all 49152 pixels lit — the backdrop, no layer). At
+  **vblank9 = 240** (`cyc9 = 290,996,340` ≈ 4.34 s emulated) **BG1 is enabled on
+  both engines** and the frames change: A `c63792f0001255…`, B `30343c48af6268aa…`.
+- **Observation.** Frame A is the **Pokémon Company + Nintendo** boot splash,
+  light-on-white as expected mid-fade; frame B is blank white. Written locally
+  as PPM/PNG under git-ignored `banks/frames/` — ROM-derived output, never
+  committed.
+- **Inference (high).** The M2.3 gate is met: the game's own recompiled 2D path
+  draws the boot splash, so BG setup, VRAM, palettes and the compositor are all
+  live. The earlier "no BG/OBJ layer is ever enabled" finding was a **near
+  miss** — that run reached ~223 vblanks; the layer turns on at 240.
+- **Unknown.** Whether the sequence proceeds through the remaining logos to the
+  title screen, and whether the ARM7 Tier-3 load (still ~38 % of scheduler time)
+  starts to dominate as scenes get busier.
+
 ### The submodule pointer must record the tag, not `main`
 
 - **Observation.** `git submodule status` prints `+aa40b575… (v0.6.10)`: the

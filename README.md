@@ -131,9 +131,13 @@ the runner's runtime live-overlay path.
 ### 4. Configure and build with the runner
 
 ```sh
-cmake --preset windows-debug -DPKMNBWB_BUILD_RUNNER=ON
-cmake --build --preset windows-debug
+cmake --preset windows-relwithdebinfo -DPKMNBWB_BUILD_RUNNER=ON
+cmake --build --preset windows-relwithdebinfo
 ```
+
+Use the **`-relwithdebinfo`** preset for anything you intend to measure or
+profile; `windows-debug` is `-O0` and its timings mislead (the first recorded
+boot numbers were all Debug). Debug stays for the test suite.
 
 `PKMNBWB_BUILD_RUNNER=ON` (a) checks that banks exist, (b) fetches and builds
 **SDL3 3.4.18** via FetchContent (static, tests/examples off), then
@@ -154,7 +158,7 @@ runner registers a bank group only for a ROM whose SHA-1 matches.
 ### 5. Run
 
 ```sh
-build/windows-debug/third_party/ndsrecomp/runner/nds_runner.exe \
+build/windows-relwithdebinfo/third_party/ndsrecomp/runner/nds_runner.exe \
     bios 250000000 --boot direct --generated-firmware --freebios \
     --rom "roms/<your-rom>.nds" \
     --interactive
@@ -171,11 +175,28 @@ build/windows-debug/third_party/ndsrecomp/runner/nds_runner.exe \
 - `--save-path <file>` persists a battery save; `--no-save` disables it.
 - Diagnostics: `--diagnostics on --diagnostics-dir <dir>` writes a performance
   bundle, and a coverage manifest is written next to the ROM by default.
+- For automated eyes, `--serve` starts the same run headlessly with the JSON
+  debug server on port 19842 (`third_party/ndsrecomp/TCP.md`), and
+  `tools/runwatch.py` drives it: it logs a timeline of vblank counts, ARM9/ARM7
+  PCs, DISPCNT for both engines and a hash per frame, writes a PNG plus a
+  console-layout (top over bottom) montage whenever the screen changes, and —
+  if the watched counter stops advancing — takes a stall report instead of
+  waiting out the protocol's round cap.
+
+  ```sh
+  python tools/runwatch.py --runner build/windows-relwithdebinfo/third_party/ndsrecomp/runner/nds_runner.exe \
+      --rom "roms/<your-rom>.nds" --screenshots banks/screenshots --out banks/timeline.jsonl
+  ```
+
+  Screenshots are ROM-derived output: keep them in the git-ignored `banks/` tree.
 
 Status: the pipeline is verified end-to-end — banks generate, link, and register
 against the ROM SHA-1 at run time, both CPUs execute, and the ARM9 reaches
-NitroSDK init. It does **not** yet reach visible output. See
-`re/notes/recompilation.md` and the M2.3 entry in `Plan.md`.
+NitroSDK init. **The game now renders:** engine A enables BG1 at `vblank9=240`
+(~4 s of emulated time) and the captured frame is the Pokémon Company + Nintendo
+boot splash (bottom screen correctly blank). It does **not** yet reach the title
+screen/menu. Optimized marginal throughput is ~26 % of real-time. See
+`re/notes/recompilation.md` and the M2.3 entries in `Plan.md`.
 
 ### Troubleshooting
 
@@ -322,6 +343,16 @@ ARM9 size.
 
 `pkmn_bankgen` generates the runner's title banks from your ROM — see
 [Runner](#runner-the-bootable-build).
+
+`tools/runwatch.py` is the bring-up harness. It launches the runner with
+`--serve` and samples the running game over the debug protocol, so one long run
+produces a progress curve (vblank counts, ARM9/ARM7 PCs, DISPCNT enables, frame
+hashes) rather than a single endpoint. `--screenshots` writes each change as a
+PNG plus a top-over-bottom montage, and a counter that stops advancing produces a
+stall report (interrupt state, halt reasons, a controlled `run_cycles` probe)
+rather than a silent hang. Requires only Python 3; writes to the git-ignored
+`banks/` tree by default. `tools/ndsquery.py` sends ad-hoc one-shot commands to a
+running server.
 
 ### Extracting a ROM
 

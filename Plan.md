@@ -236,13 +236,17 @@ generation, M6 save I/O, M7 launcher detection), not a runtime component.
       FIFO/capture is genuinely missing.
 - [~] Bring up the SDL3 window + render backend (both OSes) and present both
       256×192 screens. CMake fetches SDL3 (3.4.18, static) and the runner builds
-      and runs against it; `--interactive` opens the window. Not yet shown with
-      visible ROM output.
+      and runs against it; `--interactive` opens the window. **First ROM output
+      is now captured** (from the debug server, `tools/runwatch.py`), and the
+      window has yet to be shown displaying it.
 - [ ] GE (`GXFIFO`) stubbed initially; enough later for the title scene.
-- [ ] **Gate:** boot splash / logos render on both screens. **Not met.** A
-      250 M-cycle direct boot never enables any BG/OBJ layer (GPU2D reports
-      `A text[0..4]=0/0/0/0/0`, `direct 0 frames`) and runs at ~0.75 % of
-      real-time. See `re/notes/recompilation.md`.
+- [x] **Gate:** boot splash / logos render. **Met 2026-10-16** (top screen;
+      the bottom screen is correctly blank at this point in the sequence).
+      Evidence: engine A enables **BG1** at `vblank9=240` (~4 s of emulated
+      time) and the captured frame shows the Pokémon Company + Nintendo
+      splash; frame hashes and the PPM/PNG are under git-ignored `banks/`,
+      the method and hashes are in `re/notes/recompilation.md`. The previous
+      "measured negative" was a **near miss**: it sampled at 223 vblanks.
 
 ##### M2.4 — Input, timing, audio
 
@@ -437,6 +441,31 @@ Do not vendor or copy their content; cite and reimplement.
 ## 8. Progress log
 
 Newest first. Keep entries short; details and evidence live in `re/notes/`.
+
+- **2026-10-16 (FIRST PIXELS — the M2.3 gate is met)** — the boot splash
+  renders. Engine A enables **BG1 at `vblank9=240` (~4 s of emulated time)** and
+  the captured frame is the Pokémon Company + Nintendo logo, with the bottom
+  screen correctly blank. Captured, hashed and dumped with the new
+  `tools/runwatch.py`, which drives the runner's debug server (`--serve`) and
+  logs a progress curve instead of a single endpoint. Three things made this
+  visible where the previous session saw nothing: the Debug build was `-O0`
+  (marginal throughput is **26 % of real-time**, not 0.75 %, and the ~52 s fixed
+  startup is really ~3.3 s optimized); a sampler that watches the running game
+  rather than one fixed budget; and a **near miss** — the old negative stopped
+  at 223 vblanks, 17 short of the layer turning on. Next: title → Start → main
+  menu (M2.5) and the ARM7 coverage work. Logs, timeline JSONL and frames live
+  in git-ignored `banks/`; method and hashes are in
+  `re/notes/recompilation.md`.
+- **2026-10-16 (the intro cinematic renders, then freezes)** — continuing the
+  same run past the splash renders the **entire Pokémon Black intro**: the Game
+  Freak logo, the castle/throne artwork, Zekrom in flight, the human characters
+  and the closing "You and Your Pokémon!" card — text, sprites, fades and
+  full-colour 2D artwork, all from the recompiled game (146 distinct frames
+  captured). It then **freezes at `vblank9=4980` (~83 s emulated)**: the VBlank
+  counter stops advancing while the ARM9 keeps executing and DISPCNT still
+  reports BG0+BG3 enabled. The new stall report in `tools/runwatch.py` is what
+  makes this legible instead of a silent hang. That freeze is the M2.5 blocker
+  (title screen) and is being diagnosed.
 
 - **2026-10-16 (late platforms recorded; bring-up presets added)** — `Plan.md`
   gains **M10: Android, then web (WebAssembly)** as *recorded, unscheduled*
