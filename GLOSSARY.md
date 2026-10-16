@@ -8,8 +8,10 @@ layer.
 
 **Static recompilation**:
 Translating a program's machine code ahead of time into native C++ that is
-compiled and linked like any other code; the guest's instructions are never
-interpreted at run time.
+compiled and linked like any other code. The bulk of the guest's code runs as
+translated native code; the guest's instructions are not interpreted on the
+normal path, but the runner keeps a bounded interpreter as its correctness
+floor (**Tier 3**).
 _Avoid_: emulation, transpilation
 
 **Recompiler**:
@@ -19,9 +21,34 @@ _Avoid_: engine
 
 **Runner**:
 The runtime that hosts recompiled code, supplying the memory map, CPU services,
-devices, and present loop those translated units expect. It does not interpret
-the game's instructions.
+devices, and present loop those translated units expect. It hosts translated
+banks and a bounded interpreter (**Tier 3**) that runs only where no bank covers
+a PC. It is not an emulator core: it never interprets the whole machine.
 _Avoid_: emulator, engine
+
+**Tier 1**:
+Execution of a statically recompiled bank function, chosen by a per-CPU
+guest-PC → function dispatch table. Verifies the expected guest bytes are live
+before it runs.
+_Avoid_: fast path, native tier
+
+**Tier 2**:
+The dirty-RAM JIT shard: code copied into RAM at boot, recompiled on first miss.
+Designed but **not implemented** in the adopted runner; deferred behind Tiers 1
+and 3.
+_Avoid_: JIT
+
+**Tier 3**:
+The bounded interpreter inside the runner. It executes the guest's own bytes at
+a PC that no bank covers, and is the always-correct floor — it is never fed
+high-level emulation. A PC's tier is decided per dispatch, not per CPU.
+_Avoid_: emulator core, fallback tier
+
+**Interpreter coverage**:
+The share of executed guest instructions served by Tier 3 rather than Tier 1.
+High coverage means the port is running the game's bytes rather than its
+translated code.
+_Avoid_: interpretation rate
 
 **Engine**:
 _Deprecated as a bare term._ It ambiguously meant both the recompiler+runner
@@ -54,6 +81,19 @@ configuration for that title.
 The set of generated banks the runner registers together for one ROM, held in a
 single directory and gated by that ROM's SHA-1.
 _Avoid_: bank dir, bank set
+
+**Live-overlay shard**:
+A translation unit the runner generates from guest bytes **at run time** and
+compiles with a host C compiler before loading it. The adopted runner's
+alternative to banking an overlay ahead of time; it puts a compiler in the
+runtime, so it is not part of the default configuration.
+_Avoid_: JIT overlay, runtime bank
+
+**ROM-at-runtime**:
+The shipped program contains translated game **code** and none of the game's
+**content**; the user's ROM is read at run time for data (text, scripts, models,
+audio). Content lives only in the user's ROM, never in a build artifact.
+_Avoid_: bundled assets
 
 **HAL** (hardware abstraction layer):
 The seam through which game logic reaches hardware devices; game logic never

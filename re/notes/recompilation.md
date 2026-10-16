@@ -142,6 +142,24 @@ user-supplied BIOS stays an optional input, never shipped.
 Tool/ROM: `nds_recompile` + `nds_runner` @ `aa40b575` built with LLVM-MinGW
 clang (Release, Ninja). Target ROM: Black USA/EU NDSi, 256 MiB.
 
+### Corrections (2026-10-16, re-verified at HEAD)
+
+- **The submodule hazard below is already resolved.** `git ls-tree HEAD
+  third_party/ndsrecomp` returns `160000 commit
+  aa40b575b6f68a537f24ff3e4c94b567baa25587` — the `v0.6.10` tag, not
+  `origin/main` — and `HEAD:.gitmodules` carries both entries (the
+  `third_party/ndsrecomp` one and the nested
+  `third_party/ndsrecomp/external/arm-recomp-core` override). Only the working
+  tree was ever wrong. The findings below are kept as the record of what was
+  observed; treat their "must fix before the first push" as done.
+- **The throughput figures in "First boot of Black" are void.** That run used
+  `build/windows-debug` (`CMAKE_BUILD_TYPE=Debug`, 49 MB runner), so neither
+  "~0.75 % of real-time" nor any timing derived from it describes an optimized
+  build. Bring-up runs now use an optimized configuration; re-measure before
+  drawing conclusions. (The 250 M-cycle run's own profile implies ~72 s wall,
+  not the ~2491 s recorded here — an unexplained ~35× internal inconsistency in
+  that log, another reason to discard the numbers rather than quote them.)
+
 ### The submodule pointer must record the tag, not `main`
 
 - **Observation.** `git submodule status` prints `+aa40b575… (v0.6.10)`: the

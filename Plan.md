@@ -155,6 +155,34 @@ menu** appears. Target: push through to the 2D logo/menu visuals (M2.3+);
 Windows and Linux are developed in lockstep. BIOS is flexible (HLE preferred,
 user-supplied BIOS optional). Logos are 2D, so a visible win precedes the 3D GE.
 
+**Bring-up plan for the first visible screen (agreed 2026-10-16).** The
+deliverable is a screen you can see, and the work is ordered to remove false
+constraints first:
+
+- **Target:** Black only, through M2.3 (2D logo/title visuals) into M2.5
+  (title → Start → main menu). Overworld rendering stays in M3.
+- **Gate = pixels, not fps.** The gate is a *correct frame*, proven from the
+  runner's own debug server (`--serve`, `run_to_event`, `framebuffer A|B`), not
+  a subjective look at a window. Throughput is a separate workstream.
+- **Interpreter coverage is part of the gate.** Tier 3 remains the correctness
+  floor, but must serve **< 0.1 %** of executed guest instructions in play, read
+  from the coverage manifest — `docs/adr/0003-tier3-interpreter-policy.md`.
+- **Bring-up runs use an optimized build.** Every earlier throughput number came
+  from `CMAKE_BUILD_TYPE=Debug` and is void until re-measured.
+- **Overlays are banked ahead of time.** Game logic lives in `ovNNN`; the
+  runner's live-overlay path (run-time recompile + `dlopen`) is rejected for the
+  shipped configuration. Scope starts with the overlays the boot path loads.
+- **The recompiler sees what we declare.** Where code is copied at run time
+  (ARM7 → WRAM/main RAM), declare it with `[[code_copy]]` seeds derived from
+  evidence rather than accepting Tier 3.
+- **Everything reproducible lives in our tree.** Checked-in per-title configs
+  under `re/config/` (addresses and reasoning, no ROM bytes, no ROM-derived
+  hashes); generated `banks/` stay ignored; `third_party/ndsrecomp` stays
+  pristine and pinned at `v0.6.10`.
+- **Boot path:** `--boot direct --generated-firmware --freebios` (no dumps
+  required). Revisit only if game behaviour proves to need firmware state.
+- **Visual evidence is hashes and counters** in `re/evidence/`, never images.
+
 ##### M2.0 — Strategy + RE setup
 
 - [x] Evaluate decomp availability; resolve D1 as **B** (§2).
@@ -371,6 +399,22 @@ Do not vendor or copy their content; cite and reimplement.
 ## 8. Progress log
 
 Newest first. Keep entries short; details and evidence live in `re/notes/`.
+
+- **2026-10-16 (bring-up review: the first-screen plan is fixed)** — a design
+  review settled the M2.3→M2.5 push and wrote it into the M2 preamble: target is
+  Black-only logos → title → Start → menu; the gate is **pixels** (proven from
+  the runner's debug server, `framebuffer A|B`), not fps; Tier 3 stays a floor
+  but must cover **<0.1 %** of executed instructions (new
+  `docs/adr/0003-tier3-interpreter-policy.md`); overlays get banked ahead of
+  time; ARM7's run-time copies get declared; per-title configs are checked in
+  under `re/config/`; and the vendored submodule stays pristine. Two findings
+  forced the reordering: **every earlier throughput number came from a Debug
+  runner** (`build/windows-debug`, 49 MB) and is therefore void, and the runner
+  has a **JSON debug server** (`--serve`, `TCP.md`) that can return both
+  framebuffers — so automated frame evidence needs no fork. Corrected the stale
+  "gitlink must record the tag" hazard in `re/notes/recompilation.md`: HEAD
+  already carries `aa40b575` (`v0.6.10`) and both `.gitmodules` entries. Not yet
+  done: the re-measurement, the declarations, and the overlay bank pipeline.
 
 - **2026-10-16 (M2.3 attempt: Black boots, logos do not render yet)** — the
   runner is in the build and Black boots: the banks register against the ROM
