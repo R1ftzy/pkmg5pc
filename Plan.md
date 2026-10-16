@@ -420,10 +420,14 @@ Newest first. Keep entries short; details and evidence live in `re/notes/`.
   runner is in the build and Black boots: the banks register against the ROM
   SHA-1, both CPUs execute, and the ARM9 passes `NitroMain` into NitroSDK init
   (so the M2.1 gate holds). The M2.3 gate does **not**: after 250 M ARM9 cycles
-  (~7.5 s emulated, ~0.75 % of real-time) no BG/OBJ layer is ever enabled, so
-  nothing is displayed. Cost is ARM7-dominated — the ARM7 idles in BIOS with
-  1.37 M tier-3 interpreter entries. Boot command, measurements and unknowns are
-  in `re/notes/recompilation.md`. No push (per the no-push-until-logos rule).
+  (3.7 s of DS time) no BG/OBJ layer is ever enabled, so nothing is displayed.
+  Cost is ARM7-dominated (71 % of scheduler time): 1.27 M of the ARM7's 1.37 M
+  Tier-3 entries are unbanked **WRAM/shared-WRAM code**, not the BIOS. **These
+  figures were first recorded on a Debug runner and partly wrong; see the
+  re-measurement in `re/notes/recompilation.md` — true marginal throughput is
+  ~6.3 % of real-time, not 0.75 %.** Boot command, measurements and unknowns are
+  in `re/notes/recompilation.md`. No push (per the no-push-until-logos rule —
+  since replaced by "push any license-safe working state").
 
 - **2026-10-16 (M2.1 substrate: runner in the build + Black title banks)** —
   Black's ARM9/ARM7 banks now generate and the adopted runner is part of the

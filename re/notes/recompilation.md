@@ -361,3 +361,52 @@ measured negative. Unknowns: whether the 49-function ARM7 bank slows the FIFO
 sync below usable speed; whether the emulated cart path suffices for the game's
 own file reads; why in-range ARM9 code falls to tier-3.
 
+### Re-measurement (2026-10-16, same day) — supersedes the numbers above
+
+Same flags, same (Debug) configuration; logs in `banks/bench-*.log`.
+
+| ARM9 budget | wall | scheduler emulation | marginal cyc/s | % of 67.03 MHz |
+| --- | --- | --- | --- | --- |
+| 10,000,000 | 53.2 s | 1.5 s | — | 0.28 % |
+| 30,000,000 | 60.3 s | 4.4 s | — | 0.74 % |
+| 250,000,000 | 112.8 s | 59.4 s | **4.19 M** | **6.26 %** |
+
+- **Observation.** "~2491 s wall" above is a ~22× error: the same scenario takes
+  **112.8 s**, and the log's own profile figure was the closer one. "~0.75 % of
+  real-time" describes a ~30 M run, not a 250 M one. Marginal (steady-state)
+  throughput is ~6.3 % of real-time.
+- **Observation.** ~52 s of *every* run is a fixed cost incurred before the
+  scheduler starts: ~35 s reading the 256 MiB ROM through
+  `std::istreambuf_iterator` (`runner/src/main.cpp:141-146`; ~7.3 MiB/s against
+  803 MiB/s for the same read via the OS) and ~12 s in the runner's hand-rolled
+  SHA-1 over it (`main.cpp:1695`; ~21 MiB/s). Two host-side operations that
+  should together be well under 2 s.
+- **Observation.** Every runner and bank object in this build was compiled
+  **`-O0`** (`build/.../nds_runner.dir/src/main.cpp.obj: ...
+  CXX_COMPILER__nds_runner_unscanned_Debug`, `FLAGS = -g ...`, no `-O`), so the
+  absolute magnitude of every figure here is inflated. Nothing in these numbers
+  separates "Tier 3 is inherently slow" from "this build is unoptimized".
+- **Observation (corrects the entry above).** The ARM7 is **not** idling in BIOS
+  as an interpreted loop. `freebios_arm7` *is* registered under `--freebios` and
+  carries an exact dispatch row for `0x00001158`
+  (`generated/freebios_arm7_dispatch.c`), and the ARM7's Tier-3 histogram holds
+  **zero** BIOS entries. Its cost is **unbanked WRAM code**: 1.27 M of its
+  1.374 M Tier-3 entries are ARM7 WRAM (`0x0380xxxx`, hottest `0x03806BA4`) and
+  the shared-WRAM view (`0x037Fxxxx`, hottest `0x037FE558`), which is 71 % of the
+  250 M run's scheduler time.
+- **Observation.** The hottest in-range ARM9 Tier-3 PC is `0x02019A7C` (thumb,
+  `call`, 91,917 hits), which appears **nowhere** in
+  `banks/black/irbo_arm9_main_dispatch.c` — a **discovery** gap, not a
+  relocation one. 192 of 210 ARM9 Tier-3 entry points lie inside the banked
+  range (`0x02004000-0x020AA7C0`).
+- **Inference.** The two coverage gaps are distinct and both config-level:
+  relocated ARM7 code needs `[[code_copy]]`/seeds; undiscovered in-range ARM9
+  entry points need seeded `[[entry_point]]`s. Feeding the coverage manifest
+  back into `pkmn_bankgen` closes the second gap with no recompiler fork.
+- **Unknown.** How much emulated time the ARM9 needs to reach the first enabled
+  layer. At 250 M cycles (3.7 s of DS time, not the 7.5 s claimed above) it is
+  still inside one banked SDK expand routine (`0x02004E28`, caller
+  `LR=0x02079114`) having emitted ~25.8 KiB, and no BG/OBJ layer has been
+  enabled at any point. Whether that routine is legitimately that expensive or
+  pathologically slow in emulated time is unresolved.
+
