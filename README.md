@@ -508,6 +508,36 @@ clang-format --dry-run --Werror (Get-ChildItem rom,tools,tests -Recurse -Include
 clang-format -i rom/src/nds.cpp
 ```
 
+## Credits
+
+This port is a thin layer of our own work standing on a lot of other people's.
+With thanks to:
+
+- **[ndsrecomp](https://github.com/RetroPortingToolKit/ndsrecomp)** — the static
+  recompiler and runner the game actually executes on (ARM9/ARM7 → C++), including
+  the melonDS-derived 3D geometry engine (software + compute) and Wi-Fi device
+  model.
+- **[melonDS](https://github.com/melonDS-emu/melonDS)** — the reference DS
+  emulator those ndsrecomp subtrees come from, and the oracle this port compares
+  frames, memory and saves against; **[DeSmuME](https://github.com/TASEmulators/desmume)**
+  in the same role.
+- **[arm-recomp-core](https://github.com/mstan/arm-recomp-core)** and
+  **[freebios](https://github.com/mstan/freebios)** (mstan) — the ARM→C
+  recompilation core, and the BSD-2 BIOS replacement that makes a ROM-only boot
+  possible.
+- **[Ghidra](https://github.com/NationalSecurityAgency/ghidra)**,
+  **[Tinke](https://github.com/pleonex/tinke)** and
+  **[DSPRE](https://github.com/MarcRobler/DSPRE)** — the reverse-engineering and
+  Nitro/Gen-IV–V format tooling behind `re/`, alongside
+  **[ds-decomp](https://github.com/AetiasHax/ds-decomp)** (delink/Ghidra/objdiff)
+  and **[GBATEK](https://problemkaputt.de/gbatek.htm)** for the hardware.
+- The **decompilation community** — the `pret` projects and the early Gen 5
+  efforts that map this generation's formats and data.
+- **SDL3** and **toml++** — windowing/input/audio and configuration.
+
+Licenses and full attribution are in [`NOTICE`](NOTICE). None of the above is
+redistributed as game content; see [Legal](#legal).
+
 ## Legal
 
 The program ships without Nintendo/Game Freak assets and requires the user's
