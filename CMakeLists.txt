@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(pkmnbwb LANGUAGES CXX)
+project(pkmng5pc LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,22 +14,22 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(cmake/CompilerWarnings.cmake)
 
-option(PKMNBWB_BUILD_TESTS "Build unit tests" ON)
-option(PKMNBWB_BUILD_TOOLS "Build local extraction tools" ON)
-option(PKMNBWB_BUILD_RUNNER
+option(PKMNG5PC_BUILD_TESTS "Build unit tests" ON)
+option(PKMNG5PC_BUILD_TOOLS "Build local extraction tools" ON)
+option(PKMNG5PC_BUILD_RUNNER
     "Build the ndsrecomp runner and its SDL3 dependency (needs generated title banks)" OFF)
 
 add_subdirectory(rom)
 
-if(PKMNBWB_BUILD_TOOLS)
+if(PKMNG5PC_BUILD_TOOLS)
     add_subdirectory(tools)
 endif()
 
-if(PKMNBWB_BUILD_TESTS)
+if(PKMNG5PC_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
 
-if(PKMNBWB_BUILD_RUNNER)
+if(PKMNG5PC_BUILD_RUNNER)
     include(cmake/Runner.cmake)
 endif()

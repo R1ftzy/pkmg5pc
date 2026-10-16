@@ -10,7 +10,7 @@ add_executable(pkmn_tests
 target_link_libraries(pkmn_tests PRIVATE pkmn::core pkmn_warnings)
 
 target_compile_definitions(pkmn_tests PRIVATE
-    PKMNBWB_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+    PKMNG5PC_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )
 
 add_test(NAME pkmn_tests COMMAND pkmn_tests)

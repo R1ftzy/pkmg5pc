@@ -1,6 +1,6 @@
 # Plan.md
 
-Roadmap for **pkmnbwb** — a native PC (Windows/Linux) reimplementation of
+Roadmap for **pkmng5pc** — a native PC (Windows/Linux) reimplementation of
 Pokémon Black/White and Black 2/White 2, driven by user-supplied ROMs.
 
 This file is the source of truth for *what we build, in what order, and why*.
@@ -201,7 +201,7 @@ constraints first:
 - [~] Recompile ARM9 + overlays (and the ARM7 image) to C++ with a runner that
       keeps original RAM addresses; live-code fallback path for undecoded/mutable
       code. **ARM9 + ARM7 static banks now generate, link, and are wired into the
-      build** (`pkmn_bankgen` → `banks/<title>/`, `PKMNBWB_BUILD_RUNNER`); see
+      build** (`pkmn_bankgen` → `banks/<title>/`, `PKMNG5PC_BUILD_RUNNER`); see
       `re/notes/recompilation.md`. Overlays are deliberately left to the runner's
       live-overlay path. Discovery is uneven: ARM9 yields 5265 functions, ARM7
       only 49, so most ARM7 code runs interpreted.
@@ -456,16 +456,19 @@ Newest first. Keep entries short; details and evidence live in `re/notes/`.
   menu (M2.5) and the ARM7 coverage work. Logs, timeline JSONL and frames live
   in git-ignored `banks/`; method and hashes are in
   `re/notes/recompilation.md`.
-- **2026-10-16 (the intro cinematic renders, then freezes)** — continuing the
-  same run past the splash renders the **entire Pokémon Black intro**: the Game
-  Freak logo, the castle/throne artwork, Zekrom in flight, the human characters
-  and the closing "You and Your Pokémon!" card — text, sprites, fades and
-  full-colour 2D artwork, all from the recompiled game (146 distinct frames
-  captured). It then **freezes at `vblank9=4980` (~83 s emulated)**: the VBlank
-  counter stops advancing while the ARM9 keeps executing and DISPCNT still
-  reports BG0+BG3 enabled. The new stall report in `tools/runwatch.py` is what
-  makes this legible instead of a silent hang. That freeze is the M2.5 blocker
-  (title screen) and is being diagnosed.
+- **2026-10-16 (the intro cinematic renders)** — continuing past the splash
+  renders the **entire Pokémon Black intro**: the Game Freak logo, the
+  castle/throne artwork, Zekrom in flight, the human characters and the closing
+  "You and Your Pokémon!" card — text, sprites, fades and full-colour 2D
+  artwork, all from the recompiled game (146 distinct frames captured). The run
+  then stops making progress at `vblank9=4980` (~83 s emulated). **That stop is
+  an artifact of the harness, not a game fault:** `vblank9` only counts VBlank
+  IRQs while the guest leaves DISPSTAT bit 3 set (`io.cpp`), so sampling driven
+  by it stands still whenever the game disables that IRQ, which transitions do.
+  The ARM9 kept executing throughout. `tools/runwatch.py` now drives on
+  scheduler rounds and reads VCOUNT/DISPSTAT as ground truth; see the
+  `vblank9` note in `re/notes/recompilation.md`. The next real question is
+  whether the boot reaches the title screen (M2.5).
 
 - **2026-10-16 (late platforms recorded; bring-up presets added)** — `Plan.md`
   gains **M10: Android, then web (WebAssembly)** as *recorded, unscheduled*
@@ -509,7 +512,7 @@ Newest first. Keep entries short; details and evidence live in `re/notes/`.
 
 - **2026-10-16 (M2.1 substrate: runner in the build + Black title banks)** —
   Black's ARM9/ARM7 banks now generate and the adopted runner is part of the
-  build (`PKMNBWB_BUILD_RUNNER`); overlays are left to the runner's live path.
+  build (`PKMNG5PC_BUILD_RUNNER`); overlays are left to the runner's live path.
   Two findings re-scoped the plan: the runner HLEs **no** NitroSDK/FS/OS surface
   (it refuses load-bearing HLE and emulates the cart instead), so **M2.2 is LLE,
   not HLE** and `rom/` is an **offline** library; and there is **no retail-title

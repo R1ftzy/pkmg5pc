@@ -1,4 +1,4 @@
-# pkmnbwb
+# pkmng5pc
 
 A clean native PC (Windows/Linux) reimplementation of Pokémon Black/White and
 Black 2/White 2, driven by user-supplied ROMs. See `AGENTS.md` for contributor
@@ -60,7 +60,7 @@ runner — see [Troubleshooting](#troubleshooting).
 ## Runner (the bootable build)
 
 Running the game needs **title banks** recompiled from your own ROM plus the
-`ndsrecomp` runner. This is **off by default** (`PKMNBWB_BUILD_RUNNER=OFF`), so
+`ndsrecomp` runner. This is **off by default** (`PKMNG5PC_BUILD_RUNNER=OFF`), so
 CI and the plain build never touch it.
 
 Banks must exist **before configuring**: the runner globs them at configure time
@@ -131,7 +131,7 @@ the runner's runtime live-overlay path.
 ### 4. Configure and build with the runner
 
 ```sh
-cmake --preset windows-relwithdebinfo -DPKMNBWB_BUILD_RUNNER=ON
+cmake --preset windows-relwithdebinfo -DPKMNG5PC_BUILD_RUNNER=ON
 cmake --build --preset windows-relwithdebinfo
 ```
 
@@ -139,7 +139,7 @@ Use the **`-relwithdebinfo`** preset for anything you intend to measure or
 profile; `windows-debug` is `-O0` and its timings mislead (the first recorded
 boot numbers were all Debug). Debug stays for the test suite.
 
-`PKMNBWB_BUILD_RUNNER=ON` (a) checks that banks exist, (b) fetches and builds
+`PKMNG5PC_BUILD_RUNNER=ON` (a) checks that banks exist, (b) fetches and builds
 **SDL3 3.4.18** via FetchContent (static, tests/examples off), then
 (c) `add_subdirectory`s the runner with `NDS_BOOTSTRAP_FIRMWARE=ON`,
 `NDS_SDL_BACKEND=SDL3`, `NDS_ENABLE_COMPUTE_RENDERER=OFF`. The first configure
@@ -149,8 +149,8 @@ Two cache variables select which ROM the banks belong to:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `PKMNBWB_BANKS_DIR` | `banks/black` | bank directory from step 3 |
-| `PKMNBWB_TITLE_ROM_SHA1` | Black's SHA-1 | the ROM those banks came from |
+| `PKMNG5PC_BANKS_DIR` | `banks/black` | bank directory from step 3 |
+| `PKMNG5PC_TITLE_ROM_SHA1` | Black's SHA-1 | the ROM those banks came from |
 
 For White / Black 2 / White 2, point both at that title's bank dir and SHA-1; the
 runner registers a bank group only for a ROM whose SHA-1 matches.
@@ -201,8 +201,8 @@ screen/menu. Optimized marginal throughput is ~26 % of real-time. See
 ### Troubleshooting
 
 - `refusing to start: dump verification failed` — add `--freebios`.
-- `PKMNBWB_BUILD_RUNNER=ON but no generated title banks were found` — run step 3
-  first; check `PKMNBWB_BANKS_DIR` if the banks are somewhere else.
+- `PKMNG5PC_BUILD_RUNNER=ON but no generated title banks were found` — run step 3
+  first; check `PKMNG5PC_BANKS_DIR` if the banks are somewhere else.
 - Two `ndsrecomp` tests are environment-sensitive on Windows and can fail
   without affecting the runner: `gpu2d_window_test` overflows the default thread
   stack (`0xC00000FD`; the `nds_runner` target gets a 64 MB stack, the test does
@@ -231,25 +231,25 @@ There are two layers of tests:
 1. **ROM-independent (pure unit tests)** — compression codecs and hash
    primitives. These always run and are what CI executes (CI has no ROMs).
 2. **ROM-dependent** — NitroFS/overlay/NARC parsing against a real ROM. If no
-   ROM is found, the test prints `(skipped: no ROM found; set PKMNBWB_ROM)` and
+   ROM is found, the test prints `(skipped: no ROM found; set PKMNG5PC_ROM)` and
    passes, so the suite stays green without a ROM.
 
 ### How a ROM is located
 
 The ROM test resolves the ROM in this order:
 
-1. The `PKMNBWB_ROM` environment variable, if set to a `.nds` path.
+1. The `PKMNG5PC_ROM` environment variable, if set to a `.nds` path.
 2. Otherwise, the first `*.nds` file found in `roms/`.
 
 To test a specific ROM, set the variable **before** running:
 
 ```sh
 # Windows (PowerShell)
-$env:PKMNBWB_ROM = "C:\path\to\your-rom.nds"
+$env:PKMNG5PC_ROM = "C:\path\to\your-rom.nds"
 ctest --preset windows-debug --output-on-failure
 
 # Linux / macOS
-PKMNBWB_ROM="/path/to/black.nds" ctest --preset linux-debug --output-on-failure
+PKMNG5PC_ROM="/path/to/black.nds" ctest --preset linux-debug --output-on-failure
 ```
 
 ### Run everything
@@ -346,13 +346,17 @@ ARM9 size.
 
 `tools/runwatch.py` is the bring-up harness. It launches the runner with
 `--serve` and samples the running game over the debug protocol, so one long run
-produces a progress curve (vblank counts, ARM9/ARM7 PCs, DISPCNT enables, frame
-hashes) rather than a single endpoint. `--screenshots` writes each change as a
-PNG plus a top-over-bottom montage, and a counter that stops advancing produces a
-stall report (interrupt state, halt reasons, a controlled `run_cycles` probe)
-rather than a silent hang. Requires only Python 3; writes to the git-ignored
-`banks/` tree by default. `tools/ndsquery.py` sends ad-hoc one-shot commands to a
-running server.
+produces a progress curve (emulated time, ARM9/ARM7 PCs, VCOUNT/DISPSTAT,
+DISPCNT enables, frame hashes) rather than a single endpoint. It advances on
+**scheduler rounds** by default, because the protocol's natural driver is not
+safe: `run_to_event vblank9` stalls whenever the guest disables the VBlank IRQ
+(the counter is only bumped while DISPSTAT bit 3 is set), and `run_cycles` stops
+on a halted CPU. `--drive cycles|vblank9` selects those explicitly.
+`--screenshots` writes each change as a PNG plus a top-over-bottom montage, and a
+frozen raster produces a stall report (interrupt state, halt reasons, raw
+DISPSTAT, a controlled probe) rather than a silent hang. Requires only Python 3;
+writes to the git-ignored `banks/` tree by default. `tools/ndsquery.py` sends
+ad-hoc one-shot commands to a running server.
 
 ### Extracting a ROM
 

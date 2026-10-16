@@ -1,4 +1,4 @@
-# pkmnbwb
+# pkmng5pc
 
 A native PC reimplementation of the Generation V Pokémon games, driven by a
 user-supplied ROM and built on statically recompiled game code plus a hardware

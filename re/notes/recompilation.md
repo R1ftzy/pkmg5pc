@@ -163,7 +163,7 @@ clang (Release, Ninja). Target ROM: Black USA/EU NDSi, 256 MiB.
 ### Optimized build (2026-10-16) — the Debug caveat resolved
 
 Same command, same ROM, `cmake --preset windows-relwithdebinfo
--DPKMNBWB_BUILD_RUNNER=ON` (whole runner and every bank shard at `-O2 -g`):
+-DPKMNG5PC_BUILD_RUNNER=ON` (whole runner and every bank shard at `-O2 -g`):
 
 | 30 M ARM9 cycles | Debug | RelWithDebInfo |
 | --- | --- | --- |
@@ -212,6 +212,31 @@ Same command, same ROM, `cmake --preset windows-relwithdebinfo
 - **Unknown.** Whether the sequence proceeds through the remaining logos to the
   title screen, and whether the ARM7 Tier-3 load (still ~38 % of scheduler time)
   starts to dominate as scenes get busier.
+
+### `vblank9` is a guest-controlled counter, not a progress measure (2026-10-16)
+
+- **Observation (source).** `io.cpp` increments `g_counts.vblank9` only inside
+  `if (g_dispstat[0] & 0x0008u)` at `g_vcount == 192` — it counts *VBlank IRQs
+  actually raised*, which requires the ARM9 to have DISPSTAT bit 3 (VBlank IRQ
+  enable) set. `nds_event_value("vblank9")` and `io_state`'s `num_frames` both
+  read that same counter. The raster itself is independent: VCOUNT starts
+  sweeping at t≈0.03 s, and `vbIRQ` is still 0 until t≈0.37 s.
+- **Consequence.** A harness that advances the guest with
+  `run_to_event event=vblank9` stops making progress for as long as the guest
+  has that IRQ disabled — normal across scene transitions and fades. Two
+  bring-up runs ended this way (at `vblank9` 4980 and 258). The submodule's own
+  probes are unaffected because the firmware paths they target leave VBlank IRQs
+  enabled throughout.
+- **Correction.** The "freezes at `vblank9=4980`" note above is **void as
+  stated**: the counter stopped, not the machine. The ARM9 kept executing
+  (`cyc9` advancing) for the whole period.
+- **Method.** `tools/runwatch.py` now advances on scheduler rounds
+  (`run_rounds`), which no guest state can stall, and treats VCOUNT (`0x04000006`)
+  and DISPSTAT (`0x04000004`) as ground truth. `run_cycles` is not a safe driver
+  either: the ARM9 cycle counter stops while the CPU is halted, so it returns
+  `reached=false` on any halted CPU — which is how a cycle-driven attempt ended
+  at t≈4.15 s with the raster demonstrably alive (VCOUNT changing, `vblank9`
+  228→246 across the probe, `cyc9` +20 M in one call).
 
 ### The submodule pointer must record the tag, not `main`
 

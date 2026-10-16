@@ -25,10 +25,10 @@ std::vector<u8> read_file(const std::filesystem::path& path)
 
 std::filesystem::path find_rom()
 {
-    if (const char* env = std::getenv("PKMNBWB_ROM"); env != nullptr && *env != '\0') {
+    if (const char* env = std::getenv("PKMNG5PC_ROM"); env != nullptr && *env != '\0') {
         return env;
     }
-    std::filesystem::path dir = std::filesystem::path(PKMNBWB_SOURCE_DIR) / "roms";
+    std::filesystem::path dir = std::filesystem::path(PKMNG5PC_SOURCE_DIR) / "roms";
     if (!std::filesystem::exists(dir)) {
         return {};
     }
@@ -46,14 +46,14 @@ TEST_CASE(extract_manifest_deterministic)
 {
     std::filesystem::path rom_path = find_rom();
     if (rom_path.empty() || !std::filesystem::exists(rom_path)) {
-        std::printf("  (skipped: no ROM found; set PKMNBWB_ROM)\n");
+        std::printf("  (skipped: no ROM found; set PKMNG5PC_ROM)\n");
         return;
     }
 
     std::vector<u8> rom = read_file(rom_path);
     const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
     std::filesystem::path base = std::filesystem::temp_directory_path()
-        / ("pkmnbwb_extract_test_" + std::to_string(stamp));
+        / ("pkmng5pc_extract_test_" + std::to_string(stamp));
     std::filesystem::remove_all(base);
 
     extract::Options options;

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guidance for AI agents and human contributors working in **pkmnbwb**.
+Guidance for AI agents and human contributors working in **pkmng5pc**.
 
 ## 1. What this project is
 
@@ -62,7 +62,7 @@ ask** — offer the ROM-at-runtime alternative instead.
 ## 3. Repository layout
 
 ```
-pkmnbwb/
+pkmng5pc/
 ├─ AGENTS.md              # this file
 ├─ Plan.md                # roadmap, milestones, risks
 ├─ roms/                  # user-provided ROMs (git-ignored, never commit)

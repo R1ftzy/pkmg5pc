@@ -10,17 +10,17 @@
 # configure and treats an empty bank group as a fatal error. Generate them with
 # `pkmn_bankgen` first (see README.md).
 
-set(PKMNBWB_BANKS_DIR "${CMAKE_SOURCE_DIR}/banks/black" CACHE PATH
+set(PKMNG5PC_BANKS_DIR "${CMAKE_SOURCE_DIR}/banks/black" CACHE PATH
     "Directory of generated title banks (produced by pkmn_bankgen)")
 
-set(PKMNBWB_TITLE_ROM_SHA1 "26ad0b9967aa279c4a266ee69f52b9b2332399a5" CACHE STRING
+set(PKMNG5PC_TITLE_ROM_SHA1 "26ad0b9967aa279c4a266ee69f52b9b2332399a5" CACHE STRING
     "Lowercase SHA-1 of the ROM the generated banks belong to")
 
-file(GLOB _pkmnbwb_bank_bodies "${PKMNBWB_BANKS_DIR}/*_[0-9][0-9].c")
-if(NOT _pkmnbwb_bank_bodies)
+file(GLOB _pkmng5pc_bank_bodies "${PKMNG5PC_BANKS_DIR}/*_[0-9][0-9].c")
+if(NOT _pkmng5pc_bank_bodies)
     message(FATAL_ERROR
-        "PKMNBWB_BUILD_RUNNER=ON but no generated title banks were found in:\n"
-        "  ${PKMNBWB_BANKS_DIR}\n"
+        "PKMNG5PC_BUILD_RUNNER=ON but no generated title banks were found in:\n"
+        "  ${PKMNG5PC_BANKS_DIR}\n"
         "Generate them first, e.g.:\n"
         "  pkmn_bankgen \"roms/<your rom>.nds\" banks/black \\\n"
         "      --recompiler third_party/ndsrecomp/recompiler/build/nds_recompile\n")
@@ -52,7 +52,7 @@ set(SDL3_DIR "${CMAKE_SOURCE_DIR}/cmake/sdl3-shim" CACHE PATH
 set(NDS_BOOTSTRAP_FIRMWARE ON CACHE BOOL "" FORCE)
 set(NDS_SDL_BACKEND "SDL3" CACHE STRING "" FORCE)
 set(NDS_ENABLE_COMPUTE_RENDERER OFF CACHE BOOL "" FORCE)
-set(NDS_TITLE_BANK_DIR "${PKMNBWB_BANKS_DIR}" CACHE PATH "" FORCE)
-set(NDS_TITLE_ROM_SHA1 "${PKMNBWB_TITLE_ROM_SHA1}" CACHE STRING "" FORCE)
+set(NDS_TITLE_BANK_DIR "${PKMNG5PC_BANKS_DIR}" CACHE PATH "" FORCE)
+set(NDS_TITLE_ROM_SHA1 "${PKMNG5PC_TITLE_ROM_SHA1}" CACHE STRING "" FORCE)
 
 add_subdirectory(third_party/ndsrecomp/runner)
