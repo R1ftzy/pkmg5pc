@@ -1,8 +1,6 @@
 # pkmng5pc
 
-A clean native PC (Windows/Linux) reimplementation of Pokémon Black/White and
-Black 2/White 2, driven by user-supplied ROMs. See `AGENTS.md` for contributor
-guidance and `Plan.md` for the roadmap.
+A clean native PC (Windows/Linux) reimplementation of Pokémon Black/White and Black 2/White 2, driven by user-supplied ROMs. See `AGENTS.md` for contributor guidance and `Plan.md` for the roadmap.
 
 This repository contains **no game content**. You must own and supply the ROMs.
 
@@ -45,10 +43,7 @@ pwsh tools/play.ps1
 
 The bottom-screen window is the touchscreen.
 
-On Linux / macOS the same steps use `sh tools/bootstrap_ndsrecomp.sh`, the
-`linux-*` presets, the tools without the `.exe` suffix, and `sh tools/play.sh`.
-The full detail behind each step is in [Build](#build),
-[Runner](#runner-the-bootable-build) and [Run](#5-run).
+On Linux / macOS the same steps use `sh tools/bootstrap_ndsrecomp.sh`, the `linux-*` presets, the tools without the `.exe` suffix, and `sh tools/play.sh`. The full detail behind each step is in [Build](#build), [Runner](#runner-the-bootable-build) and [Run](#5-run).
 
 ## Layout
 
@@ -62,24 +57,17 @@ The full detail behind each step is in [Build](#build),
 ## Requirements
 
 - **CMake >= 3.24** and a generator: **Ninja** (recommended) or Visual Studio.
-- A **C++20** compiler: `clang++` on Windows (LLVM-MinGW works and is what the
-  presets pin) or `gcc`/`clang` on Linux.
+- A **C++20** compiler: `clang++` on Windows (LLVM-MinGW works and is what the presets pin) or `gcc`/`clang` on Linux.
 - **Git** — `third_party/ndsrecomp` is a pinned submodule.
-- Network access on the first *runner* configure: CMake clones SDL3 from GitHub.
-  (The clone uses `git`, so it still works where `raw.githubusercontent.com` is
-  blocked.)
+- Network access on the first *runner* configure: CMake clones SDL3 from GitHub. (The clone uses `git`, so it still works where `raw.githubusercontent.com` is blocked.)
 
-SDL3 is **not** a manual prerequisite — the runner configure fetches and builds
-it automatically (see [Runner](#runner-the-bootable-build)). Nothing outside
-`rom/`, `tools/` and `tests/` needs it.
+SDL3 is **not** a manual prerequisite — the runner configure fetches and builds it automatically (see [Runner](#runner-the-bootable-build)). Nothing outside `rom/`, `tools/` and `tests/` needs it.
 
-Windows: the presets pin `CMAKE_CXX_COMPILER=clang++`. Put `clang++`, `cmake`,
-`ninja` and `ctest` on `PATH`.
+Windows: the presets pin `CMAKE_CXX_COMPILER=clang++`. Put `clang++`, `cmake`, `ninja` and `ctest` on `PATH`.
 
 ## Build
 
-Every ROM-independent target (`rom/`, `tools/`, `tests/`) builds with no ROM and
-needs no submodule checkout:
+Every ROM-independent target (`rom/`, `tools/`, `tests/`) builds with no ROM and needs no submodule checkout:
 
 ```sh
 # Configure (pick the preset for your OS)
@@ -92,30 +80,19 @@ cmake --build --preset windows-debug
 ctest --preset windows-debug
 ```
 
-Presets (`CMakePresets.json`): `windows-debug`, `windows-release`, `linux-debug`,
-`linux-release`. Output goes to `build/<preset>/`; the test binary is
-`build/<preset>/tests/pkmn_tests[.exe]`, the tools are under
-`build/<preset>/tools/`.
+Presets (`CMakePresets.json`): `windows-debug`, `windows-release`, `linux-debug`, `linux-release`. Output goes to `build/<preset>/`; the test binary is `build/<preset>/tests/pkmn_tests[.exe]`, the tools are under `build/<preset>/tools/`.
 
-Once the runner is enabled, `ctest` also runs `ndsrecomp`'s own tests. Two of
-those are environment-sensitive on Windows and can fail without affecting the
-runner — see [Troubleshooting](#troubleshooting).
+Once the runner is enabled, `ctest` also runs `ndsrecomp`'s own tests. Two of those are environment-sensitive on Windows and can fail without affecting the runner — see [Troubleshooting](#troubleshooting).
 
 ## Runner (the bootable build)
 
-Running the game needs **title banks** recompiled from your own ROM plus the
-`ndsrecomp` runner. This is **off by default** (`PKMNG5PC_BUILD_RUNNER=OFF`), so
-CI and the plain build never touch it.
+Running the game needs **title banks** recompiled from your own ROM plus the `ndsrecomp` runner. This is **off by default** (`PKMNG5PC_BUILD_RUNNER=OFF`), so CI and the plain build never touch it.
 
-Banks must exist **before configuring**: the runner globs them at configure time
-and fails closed on an empty group. The order below matters.
+Banks must exist **before configuring**: the runner globs them at configure time and fails closed on an empty group. The order below matters.
 
 ### 1. Bootstrap the recompiler
 
-`third_party/ndsrecomp` is a submodule, and the recompiler is a standalone
-project. Its bootstrap script inits the submodule (including the nested
-`arm-recomp-core`, whose pinned URL is broken and gets repointed at GitHub),
-stages the toml++ header, builds `nds_recompile`, and generates the BIOS banks:
+`third_party/ndsrecomp` is a submodule, and the recompiler is a standalone project. Its bootstrap script inits the submodule (including the nested `arm-recomp-core`, whose pinned URL is broken and gets repointed at GitHub), stages the toml++ header, builds `nds_recompile`, and generates the BIOS banks:
 
 ```sh
 # Windows
@@ -125,10 +102,7 @@ pwsh tools/bootstrap_ndsrecomp.ps1
 sh tools/bootstrap_ndsrecomp.sh
 ```
 
-Add `-BuildRunner` / `--build-runner` to also build a standalone runner under
-`third_party/ndsrecomp/runner/build/`. **Not needed here** — step 4 builds the
-runner as part of this project, which is the only way to have SDL3 supplied via
-CMake.
+Add `-BuildRunner` / `--build-runner` to also build a standalone runner under `third_party/ndsrecomp/runner/build/`. **Not needed here** — step 4 builds the runner as part of this project, which is the only way to have SDL3 supplied via CMake.
 
 ### 2. Build this project's tools
 
@@ -156,26 +130,15 @@ build/windows-debug/tools/pkmn_bankgen.exe \
 | `irbo_arm7_main_00..07.c`, `irbo_arm7_main_dispatch.c` | ARM7 bank: 49 discovered functions |
 | `bin/*.bin`, `config/*.toml` | decoded images and recompiler configs |
 
-`pkmn_bankgen` derives every input from the ROM (load address, size and entry
-point come from the header and overlay table), so nothing ROM-derived is
-hand-written or committed. Options:
+`pkmn_bankgen` derives every input from the ROM (load address, size and entry point come from the header and overlay table), so nothing ROM-derived is hand-written or committed. Options:
 
-- `--title-config <file>` — apply the checked-in per-title config
-  (`re/config/<title>.toml`): its `[[alias]]` entries become recompiler
-  `[[code_copy]]` ranges for modules the game relocates, and its `[[seed_file]]`
-  entries replay observed Tier-3 entry points as `[[entry_point]]` seeds. All of
-  these are addresses only — no ROM bytes.
+- `--title-config <file>` — apply the checked-in per-title config (`re/config/<title>.toml`): its `[[alias]]` entries become recompiler `[[code_copy]]` ranges for modules the game relocates, and its `[[seed_file]]` entries replay observed Tier-3 entry points as `[[entry_point]]` seeds. All of these are addresses only — no ROM bytes.
 - `--shards N` — split the bank into N body shards (default 8; **minimum 2**).
-- `--emit-only` — write `bin/` + `config/` and stop before running the
-  recompiler.
+- `--emit-only` — write `bin/` + `config/` and stop before running the recompiler.
 
-Only ARM9 + ARM7 static banks are generated. Overlays are deliberately left to
-the runner's runtime live-overlay path.
+Only ARM9 + ARM7 static banks are generated. Overlays are deliberately left to the runner's runtime live-overlay path.
 
-The ARM7 `[[alias]]` entries in `re/config/black.toml` are currently **commented
-out** (with the reasoning at the site): declaring them hangs the boot, so the
-generated ARM7 bank holds only the 49 discovered functions. The ARM9 half of the
-config is on. See `re/notes/recompilation.md` §"The ARM7 alias banks".
+The ARM7 `[[alias]]` entries in `re/config/black.toml` are currently **commented out** (with the reasoning at the site): declaring them hangs the boot, so the generated ARM7 bank holds only the 49 discovered functions. The ARM9 half of the config is on. See `re/notes/recompilation.md` §"The ARM7 alias banks".
 
 ### 4. Configure and build with the runner
 
@@ -184,15 +147,9 @@ cmake --preset windows-relwithdebinfo -DPKMNG5PC_BUILD_RUNNER=ON
 cmake --build --preset windows-relwithdebinfo
 ```
 
-Use the **`-relwithdebinfo`** preset for anything you intend to measure or
-profile; `windows-debug` is `-O0` and its timings mislead (the first recorded
-boot numbers were all Debug). Debug stays for the test suite.
+Use the **`-relwithdebinfo`** preset for anything you intend to measure or profile; `windows-debug` is `-O0` and its timings mislead (the first recorded boot numbers were all Debug). Debug stays for the test suite.
 
-`PKMNG5PC_BUILD_RUNNER=ON` (a) checks that banks exist, (b) fetches and builds
-**SDL3 3.4.18** via FetchContent (static, tests/examples off), then
-(c) `add_subdirectory`s the runner with `NDS_BOOTSTRAP_FIRMWARE=ON`,
-`NDS_SDL_BACKEND=SDL3`, `NDS_ENABLE_COMPUTE_RENDERER=OFF`. The first configure
-clones and builds SDL3, so it takes several minutes.
+`PKMNG5PC_BUILD_RUNNER=ON` (a) checks that banks exist, (b) fetches and builds **SDL3 3.4.18** via FetchContent (static, tests/examples off), then (c) `add_subdirectory`s the runner with `NDS_BOOTSTRAP_FIRMWARE=ON`, `NDS_SDL_BACKEND=SDL3`, `NDS_ENABLE_COMPUTE_RENDERER=OFF`. The first configure clones and builds SDL3, so it takes several minutes.
 
 Two cache variables select which ROM the banks belong to:
 
@@ -201,8 +158,7 @@ Two cache variables select which ROM the banks belong to:
 | `PKMNG5PC_BANKS_DIR` | `banks/black` | bank directory from step 3 |
 | `PKMNG5PC_TITLE_ROM_SHA1` | Black's SHA-1 | the ROM those banks came from |
 
-For White / Black 2 / White 2, point both at that title's bank dir and SHA-1; the
-runner registers a bank group only for a ROM whose SHA-1 matches.
+For White / Black 2 / White 2, point both at that title's bank dir and SHA-1; the runner registers a bank group only for a ROM whose SHA-1 matches.
 
 ### 5. Run
 
@@ -214,10 +170,7 @@ pwsh tools/play.ps1
 sh tools/play.sh
 ```
 
-`tools/play` finds the built runner, picks the Black ROM in `roms/` (the only
-banked title so far), checks that the banks exist, and opens the live SDL window
-with the correct boot flags. Either script's `--help` lists everything; the ones
-worth knowing:
+`tools/play` finds the built runner, picks the Black ROM in `roms/` (the only banked title so far), checks that the banks exist, and opens the live SDL window with the correct boot flags. Either script's `--help` lists everything; the ones worth knowing:
 
 | Option | Effect |
 | --- | --- |
@@ -228,12 +181,9 @@ worth knowing:
 | `--stats` | print the performance summary on exit |
 | `--save-path <file>` / `--save` | persist a battery save (the default is `--no-save`) |
 
-Controls: `arrows` = D-pad, `Z`/`X` = A/B, `A`/`S` = Y/X, `Q`/`W` = L/R,
-`Enter` = Start, `Backspace` = Select, `Esc` = quit. The bottom-screen window is
-the touchscreen.
+Controls: `arrows` = D-pad, `Z`/`X` = A/B, `A`/`S` = Y/X, `Q`/`W` = L/R, `Enter` = Start, `Backspace` = Select, `Esc` = quit. The bottom-screen window is the touchscreen.
 
-The underlying invocation, if you want to drive it yourself (`tools/play` sets
-`NDS_GPU2D_THREADED=0` for you — see the workaround note below):
+The underlying invocation, if you want to drive it yourself (`tools/play` sets `NDS_GPU2D_THREADED=0` for you — see the workaround note below):
 
 ```sh
 NDS_GPU2D_THREADED=0 \
@@ -243,36 +193,14 @@ build/windows-relwithdebinfo/third_party/ndsrecomp/runner/nds_runner.exe \
     --interactive
 ```
 
-- `NDS_GPU2D_THREADED=0` puts the 2D raster on the emulation thread. The default
-  threaded scanline path wedges one scheduler round at ≈83.69 s of emulated time
-  (vendored `gpu2d` defect; the two paths are documented as the same
-  latch/execute sequence), so all long runs set it. This trades some wall time
-  for correctness, not pixels.
+- `NDS_GPU2D_THREADED=0` puts the 2D raster on the emulation thread. The default threaded scanline path wedges one scheduler round at ≈83.69 s of emulated time (vendored `gpu2d` defect; the two paths are documented as the same latch/execute sequence), so all long runs set it. This trades some wall time for correctness, not pixels.
 
-- The two **positional** arguments are the BIOS directory (a scratch dir; the
-  runner writes a generated Wi-Fi identity into it) then the **ARM9 cycle
-  budget**. Under `--interactive` the budget is parsed but **inert**: the window
-  stays open until you close it or press `Esc`. Without `--interactive` the run
-  executes the budget and exits with a CPU and graphics report instead of
-  opening a window.
-- `--interactive` also starts the debug server on port 19842
-  (`debug_pump_start`), so `tools/ndsquery.py` can query a running window —
-  but execution belongs to the frontend, so the `run_to_*` commands are
-  rejected. Use `--serve` for a headless run you drive step by step.
-- `--freebios` supplies the BSD-2 BIOS images vendored inside `ndsrecomp`; it is
-  effectively required, since without it the runner wants retail BIOS dumps and
-  aborts with `dump verification failed`. Both `--freebios` and
-  `--generated-firmware` require `--boot direct`.
+- The two **positional** arguments are the BIOS directory (a scratch dir; the runner writes a generated Wi-Fi identity into it) then the **ARM9 cycle budget**. Under `--interactive` the budget is parsed but **inert**: the window stays open until you close it or press `Esc`. Without `--interactive` the run executes the budget and exits with a CPU and graphics report instead of opening a window.
+- `--interactive` also starts the debug server on port 19842 (`debug_pump_start`), so `tools/ndsquery.py` can query a running window — but execution belongs to the frontend, so the `run_to_*` commands are rejected. Use `--serve` for a headless run you drive step by step.
+- `--freebios` supplies the BSD-2 BIOS images vendored inside `ndsrecomp`; it is effectively required, since without it the runner wants retail BIOS dumps and aborts with `dump verification failed`. Both `--freebios` and `--generated-firmware` require `--boot direct`.
 - `--save-path <file>` persists a battery save; `--no-save` disables it.
-- Diagnostics: `--diagnostics on --diagnostics-dir <dir>` writes a performance
-  bundle, and a coverage manifest is written next to the ROM by default (`tools/play` passes `--no-coverage-manifest`).
-- For automated eyes, `--serve` starts the same run headlessly with the JSON
-  debug server on port 19842 (`third_party/ndsrecomp/TCP.md`), and
-  `tools/runwatch.py` drives it: it logs a timeline of vblank counts, ARM9/ARM7
-  PCs, DISPCNT for both engines and a hash per frame, writes a PNG plus a
-  console-layout (top over bottom) montage whenever the screen changes, and —
-  if the watched counter stops advancing — takes a stall report instead of
-  waiting out the protocol's round cap.
+- Diagnostics: `--diagnostics on --diagnostics-dir <dir>` writes a performance bundle, and a coverage manifest is written next to the ROM by default (`tools/play` passes `--no-coverage-manifest`).
+- For automated eyes, `--serve` starts the same run headlessly with the JSON debug server on port 19842 (`third_party/ndsrecomp/TCP.md`), and `tools/runwatch.py` drives it: it logs a timeline of vblank counts, ARM9/ARM7 PCs, DISPCNT for both engines and a hash per frame, writes a PNG plus a console-layout (top over bottom) montage whenever the screen changes, and — if the watched counter stops advancing — takes a stall report instead of waiting out the protocol's round cap.
 
   ```sh
   python tools/runwatch.py --runner build/windows-relwithdebinfo/third_party/ndsrecomp/runner/nds_runner.exe \
@@ -281,53 +209,30 @@ build/windows-relwithdebinfo/third_party/ndsrecomp/runner/nds_runner.exe \
 
   Screenshots are ROM-derived output: keep them in the git-ignored `banks/` tree.
 
-Status: the pipeline is verified end-to-end — banks generate, link, and register
-against the ROM SHA-1 at run time, both CPUs execute, and the game boots from
-your ROM all the way to its **navigable main menu**. `tools/play` opens the live
-SDL window: the top screen shows the Pokémon Company + Nintendo boot splash, the
-intro cinematic (Game Freak logo, castle/throne, Zekrom, cast), the title screen,
-and then the four-entry startup menu — NEW GAME / MYSTERY GIFT / NINTENDO WFC
-SETTINGS / MIC TEST — after an **A** press (Start does not advance the title). The
-selection bar moves under the D-pad, and A opens sub-screens (e.g. MYSTERY GIFT's
-own menu, with "Welcome to Mystery Gift!" on the bottom screen). This is **M2.5's
-gate, met 2026-10-16 on a live window** (Windows; Linux unverified). Presented
-frames run at roughly 45–50 per second (measured from the frontend's own soak
-counters): live and watchable, but below the guest's 59.83 Hz.
+Status: the pipeline is verified end-to-end — banks generate, link, and register against the ROM SHA-1 at run time, both CPUs execute, and the game boots from your ROM all the way to its **navigable main menu**. `tools/play` opens the live SDL window: the top screen shows the Pokémon Company + Nintendo boot splash, the intro cinematic (Game Freak logo, castle/throne, Zekrom, cast), the title screen, and then the four-entry startup menu — NEW GAME / MYSTERY GIFT / NINTENDO WFC SETTINGS / MIC TEST — after an **A** press (Start does not advance the title). The selection bar moves under the D-pad, and A opens sub-screens (e.g. MYSTERY GIFT's own menu, with "Welcome to Mystery Gift!" on the bottom screen). This is **M2.5's gate, met 2026-10-16 on a live window** (Windows; Linux unverified). Presented frames run at roughly 45–50 per second (measured from the frontend's own soak counters): live and watchable, but below the guest's 59.83 Hz.
 
 Two known limitations sit between here and M3:
 
-- The vendored runner's threaded 2D path wedges one scheduler round at ≈83.69 s
-  of emulated time. `tools/play` works around it with `NDS_GPU2D_THREADED=0`
-  (see the invocation note above).
-- The two ARM7 `[[alias]]` entries in `re/config/black.toml` are commented out:
-  declaring them hangs the boot, so the ARM7 bank holds only the 49 discovered
-  functions. The ARM9 seeds are unaffected and on.
+- The vendored runner's threaded 2D path wedges one scheduler round at ≈83.69 s of emulated time. `tools/play` works around it with `NDS_GPU2D_THREADED=0` (see the invocation note above).
+- The two ARM7 `[[alias]]` entries in `re/config/black.toml` are commented out: declaring them hangs the boot, so the ARM7 bank holds only the 49 discovered functions. The ARM9 seeds are unaffected and on.
 
 See `re/notes/recompilation.md` and the M2.3/M2.5 entries in `Plan.md`.
 
 ### Troubleshooting
 
 - `refusing to start: dump verification failed` — add `--freebios`.
-- `PKMNG5PC_BUILD_RUNNER=ON but no generated title banks were found` — run step 3
-  first; check `PKMNG5PC_BANKS_DIR` if the banks are somewhere else.
-- Two `ndsrecomp` tests are environment-sensitive on Windows and can fail
-  without affecting the runner: `gpu2d_window_test` overflows the default thread
-  stack (`0xC00000FD`; the `nds_runner` target gets a 64 MB stack, the test does
-  not), and `live_index_lock_test` (Python-driven) is intermittent — its index
-  writers sometimes fail to spawn.
+- `PKMNG5PC_BUILD_RUNNER=ON but no generated title banks were found` — run step 3 first; check `PKMNG5PC_BANKS_DIR` if the banks are somewhere else.
+- Two `ndsrecomp` tests are environment-sensitive on Windows and can fail without affecting the runner: `gpu2d_window_test` overflows the default thread stack (`0xC00000FD`; the `nds_runner` target gets a 64 MB stack, the test does not), and `live_index_lock_test` (Python-driven) is intermittent — its index writers sometimes fail to spawn.
 
 ## ROMs (required for the ROM-dependent tests)
 
-Place your own legally obtained ROMs in `roms/` (git-ignored). Any dump
-filename works, e.g.:
+Place your own legally obtained ROMs in `roms/` (git-ignored). Any dump filename works, e.g.:
 
 ```
 roms/<your-rom>.nds
 ```
 
-Supported titles are the USA/EU NDSi-Enhanced dumps of Black, White, Black 2
-and White 2. Dumps are referred to by path only; no dump's release filename is
-recorded in this repo.
+Supported titles are the USA/EU NDSi-Enhanced dumps of Black, White, Black 2 and White 2. Dumps are referred to by path only; no dump's release filename is recorded in this repo.
 
 No ROM is ever committed, and no ROM is required to build or for CI.
 
@@ -335,11 +240,8 @@ No ROM is ever committed, and no ROM is required to build or for CI.
 
 There are two layers of tests:
 
-1. **ROM-independent (pure unit tests)** — compression codecs and hash
-   primitives. These always run and are what CI executes (CI has no ROMs).
-2. **ROM-dependent** — NitroFS/overlay/NARC parsing against a real ROM. If no
-   ROM is found, the test prints `(skipped: no ROM found; set PKMNG5PC_ROM)` and
-   passes, so the suite stays green without a ROM.
+1. **ROM-independent (pure unit tests)** — compression codecs and hash primitives. These always run and are what CI executes (CI has no ROMs).
+2. **ROM-dependent** — NitroFS/overlay/NARC parsing against a real ROM. If no ROM is found, the test prints `(skipped: no ROM found; set PKMNG5PC_ROM)` and passes, so the suite stays green without a ROM.
 
 ### How a ROM is located
 
@@ -367,8 +269,7 @@ ctest --preset windows-debug --output-on-failure
 
 ### Run the test binary directly (see per-test detail)
 
-`ctest` hides stdout on success. To see the ROM inventory, NARC counts, overlay
-matches, etc., run the binary directly:
+`ctest` hides stdout on success. To see the ROM inventory, NARC counts, overlay matches, etc., run the binary directly:
 
 ```sh
 # Windows
@@ -378,8 +279,7 @@ build/windows-debug/tests/pkmn_tests.exe
 ./build/linux-debug/tests/pkmn_tests.exe
 ```
 
-The binary accepts an optional **name filter** as its first argument (substring
-match), e.g.:
+The binary accepts an optional **name filter** as its first argument (substring match), e.g.:
 
 ```sh
 build/windows-debug/tests/pkmn_tests.exe lz11       # only runs lz11_roundtrip
@@ -390,26 +290,21 @@ build/windows-debug/tests/pkmn_tests.exe nds        # only runs nds_overlays_dec
 
 Compression round-trips (`tests/compression_test.cpp`):
 
-- `rle_roundtrip`, `lz10_roundtrip`, `lz11_roundtrip`,
-  `huffman4_roundtrip`, `huffman8_roundtrip` — encode then decode and compare.
+- `rle_roundtrip`, `lz10_roundtrip`, `lz11_roundtrip`, `huffman4_roundtrip`, `huffman8_roundtrip` — encode then decode and compare.
 - `decompress_rejects_bad_input` — malformed input throws instead of crashing.
 
 ROM inventory (`tests/rom_overlay_test.cpp`):
 
-- `nds_overlays_decompress` — parses the header, decompresses the ARM9 (BLZ),
-  walks the NitroFS FNT/FAT tree, sniffs NARC archives, and BLZ-decompresses
-  every ARM9 overlay, checking each against its declared RAM size.
+- `nds_overlays_decompress` — parses the header, decompresses the ARM9 (BLZ), walks the NitroFS FNT/FAT tree, sniffs NARC archives, and BLZ-decompresses every ARM9 overlay, checking each against its declared RAM size.
 
 Extraction (`tests/extract_test.cpp`):
 
-- `extract_manifest_deterministic` — extracts a subset twice and re-verifies
-  every hash and size.
+- `extract_manifest_deterministic` — extracts a subset twice and re-verifies every hash and size.
 
 Hashes (`tests/sha1_test.cpp`, `tests/sha256_test.cpp`):
 
 - `sha1_known_vectors`, `sha256_known_vectors` — published test vectors.
-- `sha1_padding_boundaries` — lengths that straddle SHA-1's padding rules,
-  cross-checked against an independent implementation.
+- `sha1_padding_boundaries` — lengths that straddle SHA-1's padding rules, cross-checked against an independent implementation.
 
 ### Expected output (example)
 
@@ -444,31 +339,13 @@ build/windows-debug/tools/pkmn_romdump.exe "roms/<your rom>.nds" [options]
 --narc-limit <n>    # with --extract: expand only the first n NARC archives
 ```
 
-Options can be combined (e.g. `--list --overlays`). With no options it prints
-the header (title, game code, ARM9/overlay/FNT/FAT offsets) and the decompressed
-ARM9 size.
+Options can be combined (e.g. `--list --overlays`). With no options it prints the header (title, game code, ARM9/overlay/FNT/FAT offsets) and the decompressed ARM9 size.
 
-`pkmn_bankgen` generates the runner's title banks from your ROM — see
-[Runner](#runner-the-bootable-build).
+`pkmn_bankgen` generates the runner's title banks from your ROM — see [Runner](#runner-the-bootable-build).
 
-`tools/play.ps1` / `tools/play.sh` open the live window — see
-[Run](#5-run). They are the "just show me the game" entry point; the two
-positional runner arguments, the boot flags and the ROM choice are all filled
-in for you.
+`tools/play.ps1` / `tools/play.sh` open the live window — see [Run](#5-run). They are the "just show me the game" entry point; the two positional runner arguments, the boot flags and the ROM choice are all filled in for you.
 
-`tools/runwatch.py` is the bring-up harness. It launches the runner with
-`--serve` and samples the running game over the debug protocol, so one long run
-produces a progress curve (emulated time, ARM9/ARM7 PCs, VCOUNT/DISPSTAT,
-DISPCNT enables, frame hashes) rather than a single endpoint. It advances on
-**scheduler rounds** by default, because the protocol's natural driver is not
-safe: `run_to_event vblank9` stalls whenever the guest disables the VBlank IRQ
-(the counter is only bumped while DISPSTAT bit 3 is set), and `run_cycles` stops
-on a halted CPU. `--drive cycles|vblank9` selects those explicitly.
-`--screenshots` writes each change as a PNG plus a top-over-bottom montage, and a
-frozen raster produces a stall report (interrupt state, halt reasons, raw
-DISPSTAT, a controlled probe) rather than a silent hang. Requires only Python 3;
-writes to the git-ignored `banks/` tree by default. `tools/ndsquery.py` sends
-ad-hoc one-shot commands to a running server.
+`tools/runwatch.py` is the bring-up harness. It launches the runner with `--serve` and samples the running game over the debug protocol, so one long run produces a progress curve (emulated time, ARM9/ARM7 PCs, VCOUNT/DISPSTAT, DISPCNT enables, frame hashes) rather than a single endpoint. It advances on **scheduler rounds** by default, because the protocol's natural driver is not safe: `run_to_event vblank9` stalls whenever the guest disables the VBlank IRQ (the counter is only bumped while DISPSTAT bit 3 is set), and `run_cycles` stops on a halted CPU. `--drive cycles|vblank9` selects those explicitly. `--screenshots` writes each change as a PNG plus a top-over-bottom montage, and a frozen raster produces a stall report (interrupt state, halt reasons, raw DISPSTAT, a controlled probe) rather than a silent hang. Requires only Python 3; writes to the git-ignored `banks/` tree by default. `tools/ndsquery.py` sends ad-hoc one-shot commands to a running server.
 
 ### Extracting a ROM
 
@@ -486,16 +363,11 @@ extracted/black/narc/<archive>/<id>  expanded NARC members
 extracted/black/manifest.sha256      "<sha256>  <path>" for every file
 ```
 
-The manifest uses the standard `sha256sum` format and is deterministic across
-runs; verify it with `sha256sum -c manifest.sha256` (Linux) from inside the
-output directory. Full extraction writes tens of thousands of files and takes a
-couple of minutes; use `--narc-limit <n>` for a quick partial run.
+The manifest uses the standard `sha256sum` format and is deterministic across runs; verify it with `sha256sum -c manifest.sha256` (Linux) from inside the output directory. Full extraction writes tens of thousands of files and takes a couple of minutes; use `--narc-limit <n>` for a quick partial run.
 
 ## Formatting / lint
 
-The project uses clang-format (`.clang-format`, WebKit-based). Before finishing
-any change, check that your source files conform (clang-format does not recurse
-directories, so list the files):
+The project uses clang-format (`.clang-format`, WebKit-based). Before finishing any change, check that your source files conform (clang-format does not recurse directories, so list the files):
 
 ```sh
 # Linux / macOS
@@ -510,35 +382,17 @@ clang-format -i rom/src/nds.cpp
 
 ## Credits
 
-This port is a thin layer of our own work standing on a lot of other people's.
-With thanks to:
+This port is a thin layer of our own work standing on a lot of other people's. With thanks to:
 
-- **[ndsrecomp](https://github.com/RetroPortingToolKit/ndsrecomp)** — the static
-  recompiler and runner the game actually executes on (ARM9/ARM7 → C++), including
-  the melonDS-derived 3D geometry engine (software + compute) and Wi-Fi device
-  model.
-- **[melonDS](https://github.com/melonDS-emu/melonDS)** — the reference DS
-  emulator those ndsrecomp subtrees come from, and the oracle this port compares
-  frames, memory and saves against; **[DeSmuME](https://github.com/TASEmulators/desmume)**
-  in the same role.
-- **[arm-recomp-core](https://github.com/mstan/arm-recomp-core)** and
-  **[freebios](https://github.com/mstan/freebios)** (mstan) — the ARM→C
-  recompilation core, and the BSD-2 BIOS replacement that makes a ROM-only boot
-  possible.
-- **[Ghidra](https://github.com/NationalSecurityAgency/ghidra)**,
-  **[Tinke](https://github.com/pleonex/tinke)** and
-  **[DSPRE](https://github.com/MarcRobler/DSPRE)** — the reverse-engineering and
-  Nitro/Gen-IV–V format tooling behind `re/`, alongside
-  **[ds-decomp](https://github.com/AetiasHax/ds-decomp)** (delink/Ghidra/objdiff)
-  and **[GBATEK](https://problemkaputt.de/gbatek.htm)** for the hardware.
-- The **decompilation community** — the `pret` projects and the early Gen 5
-  efforts that map this generation's formats and data.
+- **[ndsrecomp](https://github.com/RetroPortingToolKit/ndsrecomp)** — the static recompiler and runner the game actually executes on (ARM9/ARM7 → C++), including the melonDS-derived 3D geometry engine (software + compute) and Wi-Fi device model.
+- **[melonDS](https://github.com/melonDS-emu/melonDS)** — the reference DS emulator those ndsrecomp subtrees come from, and the oracle this port compares frames, memory and saves against; **[DeSmuME](https://github.com/TASEmulators/desmume)** in the same role.
+- **[arm-recomp-core](https://github.com/mstan/arm-recomp-core)** and **[freebios](https://github.com/mstan/freebios)** (mstan) — the ARM→C recompilation core, and the BSD-2 BIOS replacement that makes a ROM-only boot possible.
+- **[Ghidra](https://github.com/NationalSecurityAgency/ghidra)**, **[Tinke](https://github.com/pleonex/tinke)** and **[DSPRE](https://github.com/MarcRobler/DSPRE)** — the reverse-engineering and Nitro/Gen-IV–V format tooling behind `re/`, alongside **[ds-decomp](https://github.com/AetiasHax/ds-decomp)** (delink/Ghidra/objdiff) and **[GBATEK](https://problemkaputt.de/gbatek.htm)** for the hardware.
+- The **decompilation community** — the `pret` projects and the early Gen 5 efforts that map this generation's formats and data.
 - **SDL3** and **toml++** — windowing/input/audio and configuration.
 
-Licenses and full attribution are in [`NOTICE`](NOTICE). None of the above is
-redistributed as game content; see [Legal](#legal).
+Licenses and full attribution are in [`NOTICE`](NOTICE). None of the above is redistributed as game content; see [Legal](#legal).
 
 ## Legal
 
-The program ships without Nintendo/Game Freak assets and requires the user's
-own ROMs at run time. See `NOTICE` and `AGENTS.md` section 2.
+The program ships without Nintendo/Game Freak assets and requires the user's own ROMs at run time. See `NOTICE` and `AGENTS.md` section 2.
