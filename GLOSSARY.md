@@ -26,6 +26,33 @@ banks and a bounded interpreter (**Tier 3**) that runs only where no bank covers
 a PC. It is not an emulator core: it never interprets the whole machine.
 _Avoid_: emulator, engine
 
+**Live presentation**:
+Displaying the game on screen as it executes, so the player watches the port
+rather than reading captured frames afterwards. Contrast the headless path,
+which advances as fast as the host allows and is observed only through the
+debug protocol. Live presentation does **not** imply the port keeps up with the
+guest's own frame rate.
+_Avoid_: realtime display, interactive mode
+
+**Present loop**:
+The live frontend's per-frame cycle: advance one guest frame, upload both
+screens, present. One iteration is one presented frame, so presented frames and
+elapsed guest frames are the same count.
+_Avoid_: render loop
+
+**Present clock**:
+The host time source the present loop is paced against. In this port it is the
+audio output queue, not a timer or a display vsync, so no audio device means no
+pacing and the port runs flat out. Guest time advancing at exactly wall-clock
+rate is a separate, stronger property — see **Realtime (1:1)**.
+_Avoid_: frame limiter, vsync
+
+**Realtime (1:1)**:
+Emulated time advancing at the guest's own rate (59.8261 frames/second), neither
+dropped nor delayed. Distinct from **live presentation**: a port can be live
+while running slower or faster than 1:1.
+_Avoid_: full speed, real-time display
+
 **Tier 1**:
 Execution of a statically recompiled bank function, chosen by a per-CPU
 guest-PC → function dispatch table. Verifies the expected guest bytes are live

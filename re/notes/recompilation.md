@@ -213,6 +213,62 @@ Same command, same ROM, `cmake --preset windows-relwithdebinfo
   title screen, and whether the ARM7 Tier-3 load (still ~38 % of scheduler time)
   starts to dominate as scenes get busier.
 
+### The live window (2026-10-16)
+
+Tool/ROM: `nds_runner` @ `aa40b575`, `windows-relwithdebinfo` with
+`NDS_SDL_BACKEND=SDL3`, Black. Wrapper: `tools/play.ps1`.
+
+- **Observation (source).** `--interactive` is the live path
+  (`main.cpp:484`), and it is dispatched **before** `--serve`
+  (`main.cpp:2261` vs `2287`), so passing both gives a window, not a headless
+  server. The ARM9 cycle budget is **inert** under `--interactive`: it is
+  consulted only in the default batch path (`main.cpp:2314`), and the frontend
+  loop has no budget check.
+- **Observation (source).** The interactive path **also** starts the debug
+  server (`debug_pump_start(port)`, `main.cpp:2273`) but keeps execution
+  frontend-owned: `run_to_*` is rejected, while queries, rings and key/touch
+  injection stay live. So a running window is observable with
+  `tools/ndsquery.py` — useful for the wedge investigation, since the window is
+  the *only* driver that is not the debug protocol.
+- **Observation (source).** Presentation is one window of 512×768,
+  top-over-bottom by default (`NdsScreenLayout::Stacked`; `kWindowScale = 2`,
+  `frontend.cpp:655`; window size at `frontend.cpp:1519-1533`).
+  `--screen-layout separate` gives two windows. There is **no** window-scale,
+  `--vsync` or `--fps` flag in the whole parser.
+- **Observation (source).** Pacing is the **audio queue**, not a timer or a
+  display sync: the throttle loop sleeps while the queue is above its floor
+  (`frontend.cpp:1013`, "Audio is the host's real-time clock") and is only
+  armed once `audio_started`. The headless `--serve` and default batch paths
+  never call it and therefore have no pacing at all.
+- **Observation.** The frontend honours `NDS_FRONTEND_MAX_FRAMES`
+  (`frontend.cpp:2418`): it presents that many frames, then exits and prints a
+  soak line carrying `fps`, `audio_started`, underruns and an FNV hash of each
+  screen. That makes the window self-verifying without a screenshot.
+- **Observation (measured, `banks/play-selftest.log`).** 600 frames in 12.166 s
+  wall → **49.3 presented frames/s**, `audio_started=1`, 40 underruns;
+  phase split `emu=5.217s present=0.816s drain=5.562s other=0.572s`.
+- **Observation (measured, `banks/play-splash.log`).** 280 frames in 6.248 s →
+  **44.8 frames/s**, `audio_started=1`, **zero** underruns, and
+  `frame_fnv=(f462d3ff20fd83f4, 06be2b0d14dc4383)` — **different** top and
+  bottom digests. At ≈4.7 s emulated that is the boot splash on the top screen
+  with the bottom screen blank, i.e. the same state the debug-server capture
+  recorded, now produced and shown by the live frontend.
+- **Inference (high).** The M2.3 gate is confirmed through the live path, not
+  only through `--serve`: the recompiled 2D path reaches a real SDL window and
+  the presentation layer is faithful to the captured frame.
+- **Correction.** The repo's "**~26 % of real-time**" is not a frame-rate
+  ratio. It divided *ARM9 cycles* by wall time, and ARM9 cycles stall while the
+  CPU is halted (`run_cycles` returning `reached=false` on a halted CPU is the
+  same fact), so the ratio has no fixed relation to throughput. The honest
+  measure is the presented-frame rate, and it is **~45–50 fps against the
+  guest's 59.8261 fps** over these first ~5–10 s of emulated time.
+- **Unknown.** The presented-frame rate through the intro itself, where the
+  ARM7/overlay Tier-3 load is far heavier. The headless intro run took 392.1 s
+  wall for 83.675 s emulated (~21 %), but that figure includes a debug round
+  trip and a screenshot hash per sample, so it is a lower bound rather than a
+  ratio. Whether the window **freezes** at the ≈83.7 s wedge (rather than
+  exiting) is likewise unmeasured; the frontend has no budget check to exit on.
+
 ### `vblank9` is a guest-controlled counter, not a progress measure (2026-10-16)
 
 - **Observation (source).** `io.cpp` increments `g_counts.vblank9` only inside
@@ -223,20 +279,27 @@ Same command, same ROM, `cmake --preset windows-relwithdebinfo
   sweeping at t≈0.03 s, and `vbIRQ` is still 0 until t≈0.37 s.
 - **Consequence.** A harness that advances the guest with
   `run_to_event event=vblank9` stops making progress for as long as the guest
-  has that IRQ disabled — normal across scene transitions and fades. Two
-  bring-up runs ended this way (at `vblank9` 4980 and 258). The submodule's own
-  probes are unaffected because the firmware paths they target leave VBlank IRQs
-  enabled throughout.
-- **Correction.** The "freezes at `vblank9=4980`" note above is **void as
-  stated**: the counter stopped, not the machine. The ARM9 kept executing
-  (`cyc9` advancing) for the whole period.
-- **Method.** `tools/runwatch.py` now advances on scheduler rounds
-  (`run_rounds`), which no guest state can stall, and treats VCOUNT (`0x04000006`)
-  and DISPSTAT (`0x04000004`) as ground truth. `run_cycles` is not a safe driver
-  either: the ARM9 cycle counter stops while the CPU is halted, so it returns
-  `reached=false` on any halted CPU — which is how a cycle-driven attempt ended
-  at t≈4.15 s with the raster demonstrably alive (VCOUNT changing, `vblank9`
-  228→246 across the probe, `cyc9` +20 M in one call).
+  has that IRQ disabled — normal across scene transitions and fades. The
+  submodule's own probes are unaffected because the firmware paths they target
+  leave VBlank IRQs enabled throughout. Treat `vblank9` as a *guest* signal.
+- **Correction to the correction.** The first reading of the `vblank9=4980` stop
+  — that it was only this counter standing still — is **itself wrong**. A run
+  driven by `run_rounds` (immune to guest IRQ state) drives straight past
+  `vblank9` 4980, reaching 4986 at t=83.67 s with `vbIRQ=1`, and *then* a single
+  `run_rounds` of 37 000 rounds — 0.2 s of work earlier in the run — **did not
+  return within an hour**. Two independent drivers, told apart only by this
+  experiment, both stop at t≈83.7 s. **The machine really does stop
+  progressing**; see the wedge section below. The counter semantics are a real
+  trap, but they were not the cause here.
+- **Method.** `tools/runwatch.py` advances on scheduler rounds (`run_rounds`),
+  which no guest state can stall, and treats VCOUNT (`0x04000006`) and DISPSTAT
+  (`0x04000004`) as ground truth, with a per-command timeout so a driver call
+  that fails to return is *reported* rather than burning an hour. `run_cycles`
+  is not a safe driver either: the ARM9 cycle counter stops while the CPU is
+  halted, so it returns `reached=false` on any halted CPU — which is how a
+  cycle-driven attempt ended at t≈4.15 s with the raster demonstrably alive
+  (VCOUNT changing, `vblank9` 228→246 across the probe, `cyc9` +20 M in one
+  call).
 
 ### The submodule pointer must record the tag, not `main`
 
@@ -487,4 +550,122 @@ Same flags, same (Debug) configuration; logs in `banks/bench-*.log`.
   `LR=0x02079114`) having emitted ~25.8 KiB, and no BG/OBJ layer has been
   enabled at any point. Whether that routine is legitimately that expensive or
   pathologically slow in emulated time is unresolved.
+
+### M2.3 met on the optimized build: the whole intro renders (2026-10-16)
+
+- **Observation.** Driven on scheduler rounds (`tools/runwatch.py`, optimized
+  `windows-relwithdebinfo` runner), the ARM9 enables BG1 at `vblank9=240`, the
+  splash appears, and the intro continues through the Game Freak logo, the
+  castle/throne scene, Zekrom, the cast and the "You and Your Pokémon!" card:
+  **146 distinct presented frames**, hashed and written as PNG under the
+  git-ignored `banks/` (`banks/screenshots/`, `banks/contact-A.png`, a
+  top-over-bottom contact sheet). No frame is committed.
+- **Observation.** The same stretch is produced and shown through the live SDL3
+  path (`tools/play.ps1` + `NDS_FRONTEND_MAX_FRAMES`), so the frames are
+  presented, not merely captured.
+- **Inference (high).** M2.3's gate (pixels, not fps) is met well beyond the boot
+  splash: BG/OBJ setup, VRAM banking, palettes, the compositor and the scene
+  scripts all run from recompiled code. The remaining distance to M2.5 is the
+  scene load that starts around t≈82.8 s, which is where the run currently stops.
+
+### The boot wedges at t≈83.69 s: a host-side spin inside one scheduler round (2026-10-16)
+
+- **Observation (reproducible).** A run driven by `run_rounds` stops making
+  progress at **t≈83.69 s emulated** (ARM9 `cyc9` ≈ 5.609e9). It reproduces at
+  the same emulated instant with 400-, 2000-, 3000- and 37 000-round call sizes.
+- **Observation (localized to one round).** `banks/probe_step.py` advances one
+  round per call and records both PCs. The last round that returns is **#42793,
+  t=83.692661 s** — ARM9 `pc9=0x1FF8098` (ITCM), `lr9=0x1FF8044`, `r0=0x80`,
+  `romctrl=0`; ARM7 `pc7=0x001158` (freebios, asleep). The *next* `run_rounds`
+  call never returns, and a call is only a loop of bounded rounds, so **the wedge
+  is inside a single round**.
+- **Observation (a host spin, not a block).** With the call in flight, Win32
+  `GetProcessTimes` sampled from outside the process gives **57.1 CPU-seconds over
+  29.5 wall-seconds = 193 % of one core** (`banks/wall-calls.jsonl`). The process
+  burns CPU; it is not waiting on I/O.
+- **Observation.** Nothing is printed at the wedge: no `[dispatch-miss]` (so it is
+  not an unbanked jump), no stub flood (the log holds 64 `0x04004010` stub reads
+  and nothing else), no unimplemented-op abort.
+- **Observation.** The 64 rounds before the wedge are ordinary execution — ARM9
+  walking banked `0x0206xxxx`/`0x0208xxxx`, the ITCM span and the ARM9 high
+  exception vectors (`0xFFFF0018`, `0xFFFF06F4`) — with emulated time advancing
+  ~1.7 µs per round, and the ARM7 asleep in freebios throughout. There is no
+  preceding guest spin to blame.
+- **Observation (the ITCM span has three versions).** The runner's own manifests
+  carry **three** versions of page `0x01FF8000`: two essentially empty (39
+  non-zero bytes) and one loaded (1761 non-zero bytes — a real NitroSDK routine,
+  `bl` at `+0x40`, `add r1,r1,#0x04000000` IO stores). The loaded version is the
+  code executing at the wedge.
+- **Inference (medium).** The wedge is a defect in the vendored runner's round
+  path, not a guest deadlock. The slice backstops are *not* the culprit: the
+  dispatch guard (`scheduler.cpp:273`, 20 M), the Tier-3 guard (`tier3.cpp:627`,
+  50 M) and the ARM7 catch-up bail (`scheduler.cpp:486`) all bound their loops, so
+  whoever this is, it never reaches one of them.
+- **Observation (what it is not).** Not the ARM9 cycle budget (inert under
+  `--serve`, `main.cpp:2287`), not `vblank9` (guest-controlled), not stub logging.
+- **Observation (resolved — it is the gpu2d worker pool).** A/B with the 2D raster
+  put back on the emu thread — `NDS_GPU2D_THREADED=0` (`main.cpp:1505-1520`, "0 is
+  not a separate code path") — drives **clean through the wedge to t=95.03 s** in
+  130.8 s wall (`banks/probe-wedge-threadedoff.log`, verdict `clean`), while the
+  default (`=1`, 2 workers) wedges exactly as above. `banks/probe_wedge.py` does
+  the same drive and samples CPU **per thread** during the stall, so the emulation
+  thread can be told apart from the workers that spin while idle.
+- **Inference (high).** The wedge is a defect in the vendored `gpu2d` threaded
+  scanline path — the emulation thread is the *producer* of the per-line latches
+  and its round does not return while a worker is involved. CPU attribution cannot
+  distinguish it from idle worker spin, which is why the A/B, not the 193 % figure,
+  settles it.
+- **Workaround (in force; no fork).** All long runs set `NDS_GPU2D_THREADED=0`.
+  The runner documents the inline path as the identical latch/execute sequence and
+  the threaded path as byte-locked to it by the presented-frame digest ring
+  (`main.cpp:1497-1504`), so this trades wall time for correctness, not pixels.
+- **Action.** Report upstream carrying the round-level reproduction (round #42793,
+  t=83.692661 s, `NDS_GPU2D_THREADED` A/B, per-thread samples); the vendored tree
+  stays pristine meanwhile.
+
+### Coverage: the submodule's own ingest names the missing bases (2026-10-16)
+
+- **Observation.** `third_party/ndsrecomp/tools/ingest_coverage_manifests.py`
+  consumes the runner-written manifest directly (schema 4: `root_map` + a `pages`
+  section). Run over our seven manifests, with a prepared images directory
+  (`banks/coverage-ingest/images/` — decoded `arm9.bin`/`arm7.bin` plus the two
+  declared-base TOMLs, git-ignored) and both generated dispatch files as
+  `--owned-rows`, it reported:
+
+| item | value |
+| --- | --- |
+| manifests accepted / rejected | 7 / 0 |
+| page versions resolved to a module | 70 of 87 |
+| page versions **not** in the ROM | 17 (runtime-materialized) |
+| merged entry points | 2427 |
+| span seeds written | 1910 (arm9 874, arm7 1036) |
+
+- **Observation (the ARM7 alias, exactly).** Two ROM-alias findings, both for
+  `arm7.bin`, whose only bank is compiled at the header address `0x02380000`:
+
+| module | resident base | declared base | pages | guest span | module span |
+| --- | --- | --- | --- | --- | --- |
+| `arm7.bin` | `0x02FCE5A8` | `0x02380000` | 11 | `0x02FE0000..0x02FF7000` | `0x11A58..0x28A58` |
+| `arm7.bin` | `0x037F79BC` | `0x02380000` | 14 | `0x037F8000..0x03809000` | `0x644..0x11644` |
+
+  Each base is exactly `guest_span_start - module_span_start`, so the fix needs no
+  dumped bytes at all: recompile the same `arm7.bin` again with `load_address` set
+  to each resident base. The submodule reports the same shape as 93.5 % of the
+  first real player submission — the whole ARM7 module running from aliases no
+  bank declares, hence 100 % of ARM7 execution interpreted.
+- **Observation (entry points by target).** `arm7@0x037F79BC` 840,
+  `arm7@0x02FCE5A8` 547, `arm9@0x02004000` 937, unresolved 98 (arm9) + 5 (arm7).
+  The `arm9@0x02004000` seeds are discovery holes *inside* the declared range —
+  the same class as the `0x02019A7C` finding above, now enumerated — and the
+  hottest cluster is the interpreted block at `0x020834E8..0x02083590`, which a
+  grep over `banks/black/*.c` confirms no generated function covers (every
+  instruction address inside a bank function appears as a `case` label, so the
+  absence is conclusive rather than incidental).
+- **Inference (high).** Both long-open coverage gaps are now *specified* rather
+  than guessed: the ARM7 alias needs two alias banks, the ARM9 holes need seeds.
+  Neither needs a recompiler fork and neither needs anyone's dumped bytes.
+- **Unknown.** How much Tier-3 load either change removes, and whether the
+  `0x01FF8000` ITCM span (runtime-materialized, so not a ROM alias) needs its
+  captured-bytes bank — which is ROM-derived output and therefore stays in the
+  git-ignored area, regenerated locally from the user's own runs.
 

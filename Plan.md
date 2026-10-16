@@ -234,11 +234,12 @@ generation, M6 save I/O, M7 launcher detection), not a runtime component.
       firmware paths it exercises and does implement windows (its own
       `ISSUES.md` listing them as unimplemented is stale). Display
       FIFO/capture is genuinely missing.
-- [~] Bring up the SDL3 window + render backend (both OSes) and present both
+- [x] Bring up the SDL3 window + render backend (both OSes) and present both
       256×192 screens. CMake fetches SDL3 (3.4.18, static) and the runner builds
-      and runs against it; `--interactive` opens the window. **First ROM output
-      is now captured** (from the debug server, `tools/runwatch.py`), and the
-      window has yet to be shown displaying it.
+      and runs against it; `--interactive` opens the window and `tools/play`
+      wraps the invocation. **Met 2026-10-16:** the live window displays the
+      boot splash (top screen content, bottom blank) at ~45–50 presented
+      frames/s. Pacing is the audio queue, so the port is live but not 1:1.
 - [ ] GE (`GXFIFO`) stubbed initially; enough later for the title scene.
 - [x] **Gate:** boot splash / logos render. **Met 2026-10-16** (top screen;
       the bottom screen is correctly blank at this point in the sequence).
@@ -247,6 +248,14 @@ generation, M6 save I/O, M7 launcher detection), not a runtime component.
       splash; frame hashes and the PPM/PNG are under git-ignored `banks/`,
       the method and hashes are in `re/notes/recompilation.md`. The previous
       "measured negative" was a **near miss**: it sampled at 223 vblanks.
+      Also confirmed through the **live window**, not only the debug server.
+      **Widened 2026-10-16: the entire intro cinematic renders** — Game Freak
+      logo, castle/throne, Zekrom, cast, "You and Your Pokémon!" card, 146
+      distinct frames — so the gate is met well past the splash. The run then
+      stops at t≈83.69 s, where the scene load begins; that stop is a vendored
+      `gpu2d` worker-pool defect, worked around for all runs with
+      `NDS_GPU2D_THREADED=0` (see the M2.5 note), not a coverage or guest
+      problem.
 
 ##### M2.4 — Input, timing, audio
 
@@ -442,6 +451,22 @@ Do not vendor or copy their content; cite and reimplement.
 
 Newest first. Keep entries short; details and evidence live in `re/notes/`.
 
+- **2026-10-16 (the game is on screen — live window)** — the runner's
+  `--interactive` frontend had never been exercised; it opens a 512×768
+  top-over-bottom SDL window, maps the keyboard to the DS buttons, and is now
+  opened by the checked-in `tools/play.ps1` / `tools/play.sh`. Verified with a
+  live window: 600 presented frames in 12.166 s (49.3 fps) and 280 frames
+  (44.8 fps, **zero** audio underruns), with the **boot splash on the top
+  screen and the bottom screen blank** — the frontend's own exit hash reports
+  different top/bottom digests (`f462d3ff…` / `06be2b0d…`), matching the
+  headless capture. Two corrections this forced: (a) the port's **pacing is the
+  audio queue**, not a timer or vsync, so no audio device means an unpaced
+  window; (b) the recorded "~26 % of real-time" figure divided *ARM9 cycles* by
+  wall time, and ARM9 cycles stall while the CPU is halted, so it is not a
+  throughput ratio — presented-frame rate is, and it is **~45–50 fps** here.
+  The window does **not** touch the ≈83.7 s wedge, which is the next
+  workstream.
+
 - **2026-10-16 (FIRST PIXELS — the M2.3 gate is met)** — the boot splash
   renders. Engine A enables **BG1 at `vblank9=240` (~4 s of emulated time)** and
   the captured frame is the Pokémon Company + Nintendo logo, with the bottom
@@ -449,7 +474,8 @@ Newest first. Keep entries short; details and evidence live in `re/notes/`.
   `tools/runwatch.py`, which drives the runner's debug server (`--serve`) and
   logs a progress curve instead of a single endpoint. Three things made this
   visible where the previous session saw nothing: the Debug build was `-O0`
-  (marginal throughput is **26 % of real-time**, not 0.75 %, and the ~52 s fixed
+  (the "26 % of real-time" margin quoted there measures ARM9 cycles, not frames
+  — see the live-window entry above; what survives is that the ~52 s fixed
   startup is really ~3.3 s optimized); a sampler that watches the running game
   rather than one fixed budget; and a **near miss** — the old negative stopped
   at 223 vblanks, 17 short of the layer turning on. Next: title → Start → main
@@ -461,14 +487,41 @@ Newest first. Keep entries short; details and evidence live in `re/notes/`.
   castle/throne artwork, Zekrom in flight, the human characters and the closing
   "You and Your Pokémon!" card — text, sprites, fades and full-colour 2D
   artwork, all from the recompiled game (146 distinct frames captured). The run
-  then stops making progress at `vblank9=4980` (~83 s emulated). **That stop is
-  an artifact of the harness, not a game fault:** `vblank9` only counts VBlank
-  IRQs while the guest leaves DISPSTAT bit 3 set (`io.cpp`), so sampling driven
-  by it stands still whenever the game disables that IRQ, which transitions do.
-  The ARM9 kept executing throughout. `tools/runwatch.py` now drives on
-  scheduler rounds and reads VCOUNT/DISPSTAT as ground truth; see the
-  `vblank9` note in `re/notes/recompilation.md`. The next real question is
-  whether the boot reaches the title screen (M2.5).
+  then **stops progressing at t≈83.7 s emulated** (`vblank9`≈4986, i.e. right at
+  the end of the intro), and this is **not** a sampling artifact: a
+  `run_rounds` call that costs 0.2 s earlier in the run does not return within an
+  hour. `vblank9` is a guest-controlled IRQ counter (it only ticks while the
+  guest leaves DISPSTAT bit 3 set — see `re/notes/recompilation.md`), so the
+  harness now drives on scheduler rounds and reads VCOUNT/DISPSTAT as ground
+  truth, with a driver timeout so a wedge is reported instead of burning an
+  hour. **Root-caused 2026-10-16:** `banks/probe_step.py` pinned it to a single
+  scheduler round (#42793, t=83.692661 s; ARM9 `pc=0x1FF8098` in ITCM, ARM7
+  asleep in freebios), and sampling Win32 CPU time from *outside* the process
+  while the call was in flight shows it burning **193 % of one core** — a host
+  spin, not a guest deadlock and not an unbanked jump (no `[dispatch-miss]`, no
+  stub flood). **Resolved the same day: it is the vendored `gpu2d` threaded
+  scanline path.** With the 2D raster back on the emu thread
+  (`NDS_GPU2D_THREADED=0`) the same drive runs **clean to t=95.03 s**; with the
+  default (2 workers) it wedges at the same round. That is a configuration-level
+  workaround needing no fork — the runner documents the inline path as the
+  identical latch/execute sequence, byte-locked to the threaded one against the
+  presented-frame digest ring, so it costs wall time, not pixels. Bring-up runs
+  now set it, and the runner bug goes upstream with the round-level reproduction.
+  It is **not** the coverage problem, which is separate and now specified (next
+  entry).
+- **2026-10-16 (coverage gaps specified by the submodule's own ingest)** —
+  `third_party/ndsrecomp/tools/ingest_coverage_manifests.py`, run over our seven
+  runner-written manifests, resolves both long-open gaps exactly: `arm7.bin`
+  executes from **two undeclared bases** (`0x02FCE5A8`, `0x037F79BC`) while the
+  only ARM7 bank sits at `0x02380000` — so *all* ARM7 execution was interpreted —
+  and the ARM9 holes inside its declared range enumerate to 937 observed entry
+  points, hottest at the block `0x020834E8..0x02083590` that no generated
+  function covers. Both fixes are config-level and need no dumped bytes:
+  recompile the same `arm7.bin` at each resident base (base =
+  `guest_span_start - module_span_start`), and seed the ARM9 holes. Counts and
+  the per-base seed files are in `re/notes/recompilation.md`; the seeds go into
+  checked-in per-title configs under `re/config/`, with the generated banks
+  staying git-ignored.
 
 - **2026-10-16 (late platforms recorded; bring-up presets added)** — `Plan.md`
   gains **M10: Android, then web (WebAssembly)** as *recorded, unscheduled*

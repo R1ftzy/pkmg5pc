@@ -22,6 +22,12 @@ firmware.bin
 # Generated title banks (derived from the user's ROM; regenerable, never commit)
 banks/
 
+# ndsrecomp diagnostics bundles, written to the working directory unless
+# --diagnostics-dir redirects them (tools/play sends them to banks/play/)
+performance-*.jsonl
+hostprof-*.ndshp
+*.ndshp
+
 # Build output
 build/
 build*/
@@ -52,6 +58,8 @@ desktop.ini
 
 # Local caches
 .cache/
+__pycache__/
+*.pyc
 *.log
 
 # Vendored ndsrecomp: regenerable generated banks + local perf output

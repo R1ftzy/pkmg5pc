@@ -1,0 +1,143 @@
+# Run the game in the runner's live SDL window.
+#
+# Opens nds_runner's interactive frontend (`--interactive`) so the game is
+# displayed as it executes, instead of the headless `--serve` path that
+# tools/runwatch.py drives. See README.md ("Run") for the build steps this
+# assumes: generated title banks plus a runner configured with
+# PKMNG5PC_BUILD_RUNNER=ON (which supplies SDL3).
+#
+# Only Black is banked today, so the ROM defaults to the Black image in roms/.
+#
+# Usage:
+#   pwsh tools/play.ps1
+#   pwsh tools/play.ps1 -Rom "roms/<your-rom>.nds"
+#   pwsh tools/play.ps1 -Layout separate
+#   pwsh tools/play.ps1 -Frames 600 -Stats    # present 600 frames, print stats, exit
+#   pwsh tools/play.ps1 -SavePath banks/black.sav
+#   pwsh tools/play.ps1 -Diagnostics          # keep a perf bundle in banks/play/
+#
+# The positional BIOS directory and ARM9 cycle budget are still required by the
+# runner, but the budget is inert under --interactive: the window stays open
+# until you close it or press Esc.
+
+param(
+  [string]$Rom,
+  [string]$Runner,
+  [string]$BiosDir = 'bios',
+  [ValidateSet('stacked', 'separate')][string]$Layout = 'stacked',
+  [int]$Frames = 0,
+  [string]$SavePath,
+  [switch]$Save,
+  [switch]$Stats,
+  [switch]$Coverage,
+  [switch]$Diagnostics,
+  [Parameter(ValueFromRemainingArguments = $true)][string[]]$Extra
+)
+
+$ErrorActionPreference = 'Stop'
+
+$root = Split-Path -Parent $PSScriptRoot
+
+function Fail([string]$message) {
+  Write-Host "play: $message" -ForegroundColor Red
+  exit 1
+}
+
+# --- runner -----------------------------------------------------------------
+
+$candidates = @()
+if ($Runner) { $candidates += $Runner }
+if ($env:PKMNG5PC_RUNNER) { $candidates += $env:PKMNG5PC_RUNNER }
+foreach ($preset in 'windows-relwithdebinfo', 'windows-release', 'windows-debug') {
+  $candidates += Join-Path $root "build/$preset/third_party/ndsrecomp/runner/nds_runner.exe"
+}
+$runner = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $runner) {
+  Fail @"
+no built runner found. Configure and build one first:
+  cmake --preset windows-relwithdebinfo -DPKMNG5PC_BUILD_RUNNER=ON
+  cmake --build --preset windows-relwithdebinfo
+or pass -Runner <path>.
+"@
+}
+
+# --- banks ------------------------------------------------------------------
+
+$banks = Join-Path $root 'banks/black'
+$bodies = @(Get-ChildItem $banks -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match '_[0-9][0-9]\.c$' })
+if ($bodies.Count -eq 0) {
+  Fail @"
+no generated title banks in $banks. Generate them first:
+  build/windows-debug/tools/pkmn_bankgen.exe "roms/<your-rom>.nds" banks/black ``
+      --recompiler third_party/ndsrecomp/recompiler/build/nds_recompile.exe
+"@
+}
+
+# --- ROM --------------------------------------------------------------------
+
+function Get-GameCode([string]$path) {
+  $stream = [System.IO.File]::OpenRead($path)
+  try {
+    $buffer = New-Object byte[] 16
+    [void]$stream.Read($buffer, 0, 16)
+  } finally {
+    $stream.Dispose()
+  }
+  return [System.Text.Encoding]::ASCII.GetString($buffer, 12, 4)
+}
+
+if (-not $Rom) { $Rom = $env:PKMNG5PC_ROM }
+if (-not $Rom) {
+  $candidates = @(Get-ChildItem (Join-Path $root 'roms') -Filter '*.nds' -ErrorAction SilentlyContinue)
+  $black = $candidates | Where-Object { (Get-GameCode $_.FullName) -eq 'IRBO' } | Select-Object -First 1
+  if ($black) {
+    $Rom = $black.FullName
+  } elseif ($candidates.Count -eq 1) {
+    $Rom = $candidates[0].FullName
+  } else {
+    $names = ($candidates | ForEach-Object { "  $($_.Name)" }) -join "`n"
+    Fail "no Black ROM (game code IRBO) found in roms/ - only Black is banked so far.`nPass -Rom <path>. Candidates:`n$names"
+  }
+}
+if (-not (Test-Path -LiteralPath $Rom)) { Fail "no such ROM: $Rom" }
+$Rom = (Resolve-Path -LiteralPath $Rom).Path
+
+# --- command ----------------------------------------------------------------
+
+$runnerArgs = @(
+  $BiosDir, '250000000',
+  '--boot', 'direct', '--generated-firmware', '--freebios',
+  '--rom', $Rom,
+  '--interactive',
+  '--screen-layout', $Layout
+)
+if (-not $Coverage) { $runnerArgs += '--no-coverage-manifest' }
+if ($Diagnostics) {
+  $runnerArgs += @('--diagnostics', 'on', '--diagnostics-dir', (Join-Path $root 'banks/play'))
+} else {
+  $runnerArgs += @('--diagnostics', 'off')
+}
+if ($SavePath) { $runnerArgs += @('--save-path', $SavePath) } elseif (-not $Save) { $runnerArgs += '--no-save' }
+if ($Extra) { $runnerArgs += $Extra }
+
+if ($Frames -gt 0) { $env:NDS_FRONTEND_MAX_FRAMES = "$Frames" }
+if ($Stats -or $Frames -gt 0) { $env:NDS_FRONTEND_STATS = '1' }
+# The runner's threaded 2D scanline path wedges a single scheduler round at
+# t=83.69 s emulated (re/notes/recompilation.md). The inline path is the same
+# latch/execute sequence and is byte-locked to the threaded one by the
+# presented-frame digest ring, so default to it unless the caller overrides.
+if (-not $env:NDS_GPU2D_THREADED) { $env:NDS_GPU2D_THREADED = '0' }
+
+Write-Host "runner: $runner"
+Write-Host "rom:    $Rom"
+Write-Host "banks:  $banks"
+Write-Host "keys:   arrows=D-pad  Z=A X=B  A=Y S=X  Q=L W=R  Enter=Start  Backspace=Select  Esc=quit"
+
+Push-Location $root
+try {
+  & $runner @runnerArgs
+  exit $LASTEXITCODE
+} finally {
+  Pop-Location
+}

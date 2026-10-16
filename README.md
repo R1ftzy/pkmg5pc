@@ -99,13 +99,7 @@ This produces `pkmn_bankgen`, which step 3 needs.
 
 ```sh
 build/windows-debug/tools/pkmn_bankgen.exe \
-    "ROM_PATH --recompiler third_party/ndsrecomp/recompiler/build/nds_recompile.exe
-```
-e.g.
-
-```sh
-build/windows-debug/tools/pkmn_bankgen.exe \
-    "roms/pkmn-black.nds" banks/black \
+    "roms/<your-rom>.nds" banks/black \
     --recompiler third_party/ndsrecomp/recompiler/build/nds_recompile.exe
 ```
 
@@ -158,6 +152,34 @@ runner registers a bank group only for a ROM whose SHA-1 matches.
 ### 5. Run
 
 ```sh
+# Windows
+pwsh tools/play.ps1
+
+# Linux / macOS
+sh tools/play.sh
+```
+
+`tools/play` finds the built runner, picks the Black ROM in `roms/` (the only
+banked title so far), checks that the banks exist, and opens the live SDL window
+with the correct boot flags. Either script's `--help` lists everything; the ones
+worth knowing:
+
+| Option | Effect |
+| --- | --- |
+| `--rom <path>` | use a specific ROM (`PKMNG5PC_ROM` also works) |
+| `--runner <path>` | use a specific runner (`PKMNG5PC_RUNNER` also works) |
+| `--layout stacked\|separate` | one top-over-bottom window (default) or two windows |
+| `--frames N` | present N frames, print fps and a frame hash, exit — a self-test |
+| `--stats` | print the performance summary on exit |
+| `--save-path <file>` / `--save` | persist a battery save (the default is `--no-save`) |
+
+Controls: `arrows` = D-pad, `Z`/`X` = A/B, `A`/`S` = Y/X, `Q`/`W` = L/R,
+`Enter` = Start, `Backspace` = Select, `Esc` = quit. The bottom-screen window is
+the touchscreen.
+
+The underlying invocation, if you want to drive it yourself:
+
+```sh
 build/windows-relwithdebinfo/third_party/ndsrecomp/runner/nds_runner.exe \
     bios 250000000 --boot direct --generated-firmware --freebios \
     --rom "roms/<your-rom>.nds" \
@@ -166,15 +188,21 @@ build/windows-relwithdebinfo/third_party/ndsrecomp/runner/nds_runner.exe \
 
 - The two **positional** arguments are the BIOS directory (a scratch dir; the
   runner writes a generated Wi-Fi identity into it) then the **ARM9 cycle
-  budget**. Without `--interactive` the run executes the budget and exits with a
-  CPU and graphics report instead of opening a window.
+  budget**. Under `--interactive` the budget is parsed but **inert**: the window
+  stays open until you close it or press `Esc`. Without `--interactive` the run
+  executes the budget and exits with a CPU and graphics report instead of
+  opening a window.
+- `--interactive` also starts the debug server on port 19842
+  (`debug_pump_start`), so `tools/ndsquery.py` can query a running window —
+  but execution belongs to the frontend, so the `run_to_*` commands are
+  rejected. Use `--serve` for a headless run you drive step by step.
 - `--freebios` supplies the BSD-2 BIOS images vendored inside `ndsrecomp`; it is
   effectively required, since without it the runner wants retail BIOS dumps and
   aborts with `dump verification failed`. Both `--freebios` and
   `--generated-firmware` require `--boot direct`.
 - `--save-path <file>` persists a battery save; `--no-save` disables it.
 - Diagnostics: `--diagnostics on --diagnostics-dir <dir>` writes a performance
-  bundle, and a coverage manifest is written next to the ROM by default.
+  bundle, and a coverage manifest is written next to the ROM by default (`tools/play` passes `--no-coverage-manifest`).
 - For automated eyes, `--serve` starts the same run headlessly with the JSON
   debug server on port 19842 (`third_party/ndsrecomp/TCP.md`), and
   `tools/runwatch.py` drives it: it logs a timeline of vblank counts, ARM9/ARM7
@@ -192,11 +220,14 @@ build/windows-relwithdebinfo/third_party/ndsrecomp/runner/nds_runner.exe \
 
 Status: the pipeline is verified end-to-end — banks generate, link, and register
 against the ROM SHA-1 at run time, both CPUs execute, and the ARM9 reaches
-NitroSDK init. **The game now renders:** engine A enables BG1 at `vblank9=240`
-(~4 s of emulated time) and the captured frame is the Pokémon Company + Nintendo
-boot splash (bottom screen correctly blank). It does **not** yet reach the title
-screen/menu. Optimized marginal throughput is ~26 % of real-time. See
-`re/notes/recompilation.md` and the M2.3 entries in `Plan.md`.
+NitroSDK init. **The game renders in a live window:** `tools/play` opens the SDL
+view, engine A enables BG1 at `vblank9=240` (~4.3 s of emulated time), and the
+top screen shows the Pokémon Company + Nintendo boot splash with the bottom
+screen correctly blank. Presented frames run at roughly 45–50 per second
+(measured from the frontend's own soak counters), which is live and watchable
+but below the guest's 59.83 Hz. The run does **not** yet reach the title
+screen/menu: it stops progressing at ≈83.7 s of emulated time, at the end of the
+intro. See `re/notes/recompilation.md` and the M2.3 entries in `Plan.md`.
 
 ### Troubleshooting
 
@@ -343,6 +374,11 @@ ARM9 size.
 
 `pkmn_bankgen` generates the runner's title banks from your ROM — see
 [Runner](#runner-the-bootable-build).
+
+`tools/play.ps1` / `tools/play.sh` open the live window — see
+[Run](#5-run). They are the "just show me the game" entry point; the two
+positional runner arguments, the boot flags and the ROM choice are all filled
+in for you.
 
 `tools/runwatch.py` is the bring-up harness. It launches the runner with
 `--serve` and samples the running game over the debug protocol, so one long run

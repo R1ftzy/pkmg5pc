@@ -1,18 +1,25 @@
 """Record a boot timeline from the runner's debug server.
 
 Drives the ndsrecomp debug protocol (``third_party/ndsrecomp/TCP.md``) over
-``--serve`` and samples the game as it advances: vblank counts, ARM9/ARM7 PC+LR,
-DISPCNT for both engines, and a hash of each framebuffer. The point is a progress
-*curve* from one run instead of an endpoint per run.
+``--serve`` and samples the game as it advances: emulated time, ARM9/ARM7 PC+LR,
+DISPCNT for both engines, the raster (VCOUNT/DISPSTAT) and a hash of each
+framebuffer. The point is a progress *curve* from one run instead of an endpoint
+per run.
 
-When the watched counter stops advancing the harness takes a stall report rather
-than waiting out the protocol's round cap: interrupt state for both CPUs, raw
-DISPCNT, and a controlled ``run_cycles`` probe that separates "time is passing
-but no more VBlanks arrive" from "the emulation itself is wedged".
+Sampling is driven by **ARM9 cycles**, not by ``vblank9``: the runner only bumps
+``vblank9`` while the guest has DISPSTAT bit 3 (VBlank IRQ enable) set
+(``io.cpp``, ``g_vcount == 192``), so it is a guest-controlled IRQ counter, not a
+measure of progress. A game that disables VBlank IRQs mid-transition freezes that
+counter while the raster keeps running. VCOUNT is the ground truth used here.
 
-Screenshots are written as PNG next to a side-by-side (top over bottom) montage
-per change. They are ROM-derived output: keep them in the git-ignored ``banks/``
-tree, never in a commit.
+When the sampled state stops changing the harness takes a stall report instead of
+waiting out the protocol's round cap: interrupt state, per-CPU halt reasons, raw
+DISPSTAT, and a controlled ``run_cycles`` probe that separates "raster alive,
+guest stopped asking for IRQs" from "display dead" from "emulation wedged".
+
+Screenshots are written as PNG next to a top-over-bottom montage whenever the
+screen changes. They are ROM-derived output: keep them in the git-ignored
+``banks/`` tree, never in a commit.
 
     python tools/runwatch.py --runner <nds_runner> --rom "roms/<your-rom>.nds" \\
         --screenshots banks/screenshots --out banks/timeline.jsonl
@@ -29,6 +36,9 @@ import subprocess
 import sys
 import time
 import zlib
+
+ARM9_HZ = 67_027_980.0
+VBLANKS_PER_SECOND = 59.8261
 
 
 class DebugClient:
@@ -62,11 +72,11 @@ class DebugClient:
         return reply["w"], reply["h"], bytes.fromhex(reply["rgb"])
 
 
-def wait_for_server(host, port, deadline):
+def wait_for_server(host, port, deadline, timeout=3600.0):
     last = None
     while time.time() < deadline:
         try:
-            return DebugClient(host, port, timeout=3600.0)
+            return DebugClient(host, port, timeout=timeout)
         except OSError as exc:
             last = exc
             time.sleep(1.0)
@@ -81,6 +91,19 @@ def decode_dispcnt(value):
         "bg": [bool(value & (1 << (8 + i))) for i in range(4)],
         "obj": bool(value & (1 << 12)),
         "layers": (value & 0x1F00) != 0,
+    }
+
+
+def decode_dispstat(value):
+    return {
+        "raw": value,
+        "vblank_flag": bool(value & 0x1),
+        "hblank_flag": bool(value & 0x2),
+        "vcount_match": bool(value & 0x4),
+        "vblank_irq": bool(value & 0x8),
+        "hblank_irq": bool(value & 0x10),
+        "vcount_irq": bool(value & 0x20),
+        "vcount_trigger": (value >> 8) & 0xFF,
     }
 
 
@@ -130,6 +153,10 @@ def sample(client, engines, want_frames):
         "counts": counts,
         "arm9": {"pc": regs9["r"][15], "lr": regs9["r"][14], "mode": regs9["mode"]},
         "arm7": {"pc": regs7["r"][15], "lr": regs7["r"][14], "mode": regs7["mode"]},
+        "vcount": client.cmd("read_io", cpu=9, addr=0x04000006, width=16)["value"],
+        "dispstat9": decode_dispstat(client.cmd("read_io", cpu=9, addr=0x04000004, width=16)["value"]),
+        "dispstat7": decode_dispstat(client.cmd("read_io", cpu=7, addr=0x04000004, width=16)["value"]),
+        "tier3": client.cmd("static_coverage"),
     }
     for engine, addr in (("A", 0x04000000), ("B", 0x04001000)):
         dispcnt = client.cmd("read_io", cpu=9, addr=addr, width=32)["value"]
@@ -157,15 +184,14 @@ def any_layer(state):
 
 
 def stall_report(client, cycles, reply):
-    """Distinguish 'no VBlanks but time passes' from 'emulation wedged'."""
+    """Separate 'raster alive but guest stopped asking for IRQs' from real faults."""
     before = client.cmd("event_counts")
-    probe_cycles = before["cyc9"] + cycles
-    probe = client.cmd("run_cycles", arm9=probe_cycles)
+    probe = client.cmd("run_cycles", arm9=before["cyc9"] + cycles)
     after = client.cmd("event_counts")
     return {
-        "run_to_event": {key: reply.get(key) for key in
-                         ("reached", "stalled", "terminal", "exhausted", "rounds",
-                          "reason9", "reason7")},
+        "run_cmd": {key: reply.get(key) for key in
+                    ("reached", "stalled", "terminal", "exhausted", "rounds",
+                     "reason9", "reason7", "cycles")},
         "io_state": client.cmd("io_state"),
         "probe": {
             "cycles_requested": cycles,
@@ -177,34 +203,43 @@ def stall_report(client, cycles, reply):
             "vblank9_after": after["vblank9"],
             "run_cycles_reached": probe.get("reached"),
         },
+        "vcount_after": client.cmd("read_io", cpu=9, addr=0x04000006, width=16)["value"],
+        "dispstat9_after": decode_dispstat(
+            client.cmd("read_io", cpu=9, addr=0x04000004, width=16)["value"]),
     }
 
 
-def describe_stall(report):
+def describe_stall(report, state):
     probe = report["probe"]
     io = report["io_state"]
-    event = report["run_to_event"]
+    cmd = report["run_cmd"]
+    cycles_moved = probe["cyc9_after"] > probe["cyc9_before"]
+    vblank_moved = probe["vblank9_after"] > probe["vblank9_before"]
+    raster_moved = report["vcount_after"] != state["vcount"]
     lines = [
-        f"stall: run_to_event stalled={event['stalled']} terminal={event['terminal']} "
-        f"exhausted={event['exhausted']} rounds={event['rounds']} "
-        f"reason9={event['reason9']!r} reason7={event['reason7']!r}",
+        f"stall: run_cmd reached={cmd['reached']} stalled={cmd['stalled']} terminal={cmd['terminal']} "
+        f"exhausted={cmd['exhausted']} rounds={cmd['rounds']} "
+        f"reason9={cmd['reason9']!r} reason7={cmd['reason7']!r}",
         f"stall: cyc9 {probe['cyc9_before']} -> {probe['cyc9_after']} "
-        f"(insn9 {probe['insn9_before']} -> {probe['insn9_after']}), "
-        f"vblank9 {probe['vblank9_before']} -> {probe['vblank9_after']}, "
-        f"run_cycles reached={probe['run_cycles_reached']}",
+        f"(insn9 {probe['insn9_before']} -> {probe['insn9_after']}) over +{probe['cycles_requested']} requested",
+        f"stall: vblank9 {probe['vblank9_before']} -> {probe['vblank9_after']}, "
+        f"vcount {state['vcount']} -> {report['vcount_after']} (raster {'alive' if raster_moved else 'frozen'})",
+        f"stall: dispstat9 vblank_irq_enable={state['dispstat9']['vblank_irq']} -> "
+        f"{report['dispstat9_after']['vblank_irq']}, vblank_flag={report['dispstat9_after']['vblank_flag']}",
         f"stall: cpu9 ime={io['cpu9']['ime']} ie=0x{io['cpu9']['ie']:X} if=0x{io['cpu9']['if']:X} "
         f"postflg={io['cpu9']['postflg']} ipcsync=0x{io['cpu9']['ipcsync']:X}",
         f"stall: cpu7 ime={io['cpu7']['ime']} ie=0x{io['cpu7']['ie']:X} if=0x{io['cpu7']['if']:X} "
         f"postflg={io['cpu7']['postflg']} ipcsync=0x{io['cpu7']['ipcsync']:X}",
-        f"stall: num_frames={io['num_frames']}",
     ]
-    if probe["vblank9_after"] == probe["vblank9_before"] and probe["cyc9_after"] > probe["cyc9_before"]:
-        if probe["vblank9_before"] == 0:
-            lines.append("stall: verdict = display has not started, so no VBlanks exist yet")
-        else:
-            lines.append("stall: verdict = CPUs execute, VBlank source has stopped (not a wedged emulator)")
-    elif probe["cyc9_after"] == probe["cyc9_before"]:
+    if not cycles_moved:
         lines.append("stall: verdict = no cycle progress at all (emulation wedged)")
+    elif not raster_moved:
+        lines.append("stall: verdict = raster frozen - the display stopped scanning out")
+    elif not vblank_moved and not state["dispstat9"]["vblank_irq"]:
+        lines.append("stall: verdict = raster alive, guest disabled VBlank IRQs - vblank9 is "
+                     "guest-controlled, drive on cycles")
+    elif not vblank_moved:
+        lines.append("stall: verdict = raster alive and VBlank IRQ enabled but never raised")
     return lines
 
 
@@ -213,9 +248,18 @@ def main():
     parser.add_argument("--runner", required=True, help="path to nds_runner executable")
     parser.add_argument("--rom", required=True, help="path to the ROM the banks were built from")
     parser.add_argument("--bios", default="bios", help="scratch/identity directory (positional arg 1)")
-    parser.add_argument("--cycles", type=int, default=4_000_000_000, help="ARM9 cycle budget")
-    parser.add_argument("--step", type=int, default=60, help="vblanks between samples")
-    parser.add_argument("--max-vblanks", type=int, default=0, help="stop after this many vblanks (0 = no limit)")
+    parser.add_argument("--cycles", type=int, default=8_000_000_000, help="ARM9 cycle budget")
+    parser.add_argument("--drive", choices=("rounds", "cycles", "vblank9"), default="rounds",
+                        help="what to advance on: scheduler rounds (default, immune to guest halts), "
+                             "emulated cycles, or the guest's VBlank IRQ counter")
+    parser.add_argument("--rounds-per-sample", type=int, default=37000,
+                        help="rounds-mode step (~1/30 s of emulated time by default)")
+    parser.add_argument("--cycles-per-sample", type=int, default=ARM9_HZ // 30,
+                        help="cycle-mode step (~1/30 s by default)")
+    parser.add_argument("--step", type=int, default=60, help="vblank9-mode step")
+    parser.add_argument("--stall-samples", type=int, default=3,
+                        help="consecutive samples with an unchanged VCOUNT before reporting a stall")
+    parser.add_argument("--max-samples", type=int, default=0, help="stop after this many samples (0 = no limit)")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=19842)
     parser.add_argument("--engines", default="AB", help="engines to capture frames for")
@@ -230,6 +274,15 @@ def main():
     parser.add_argument("--max-rounds", type=int, default=0,
                         help="run_to_event round cap (0 = adapt to the observed cost per step)")
     parser.add_argument("--stall-probe-cycles", type=int, default=20000000, help="cycles for the stall probe")
+    parser.add_argument("--tier3", help="write the Tier-3 hot-address list here whenever the totals change")
+    parser.add_argument("--tier3-every", type=int, default=100,
+                        help="also refresh --tier3 every this many samples")
+    parser.add_argument("--refine-at", type=float, default=0.0,
+                        help="emulated seconds after which rounds-mode uses --refine-rounds as the step")
+    parser.add_argument("--refine-rounds", type=int, default=4000,
+                        help="rounds-mode step once --refine-at is reached")
+    parser.add_argument("--timeout", type=float, default=120.0,
+                        help="per-command socket timeout; a driver call that overruns it is reported as a stall")
     args = parser.parse_args()
 
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -250,44 +303,74 @@ def main():
     started = time.time()
     samples = 0
     written = {}
+    seen = set()
 
     def emit(record):
         timeline.write(json.dumps(record) + "\n")
         timeline.flush()
 
     try:
-        client = wait_for_server(args.host, args.port, time.time() + args.startup_timeout)
+        client = wait_for_server(args.host, args.port, time.time() + args.startup_timeout, args.timeout)
         client.cmd("ping")
         print(f"server up after {time.time() - started:.1f}s", file=sys.stderr)
 
-        probe, _ = sample(client, engines="", want_frames=False)
-        vblank = probe["counts"]["vblank9"]
-        emit({"sample": 0, "wall_s": round(time.time() - started, 2), "vblank9": vblank, **probe})
-        print(f"[0] vblank9={vblank} A9 pc={probe['arm9']['pc']:08X} A7 pc={probe['arm7']['pc']:08X}",
-              file=sys.stderr)
+        state, _ = sample(client, engines="", want_frames=False)
+        emit({"sample": 0, "wall_s": round(time.time() - started, 2),
+              "emulated_s": round(state["counts"]["cyc9"] / ARM9_HZ, 3), **state})
+        print(f"[0] t=0.00s vcount={state['vcount']:3d} A9 pc={state['arm9']['pc']:08X} "
+              f"A7 pc={state['arm7']['pc']:08X}", file=sys.stderr)
 
         step = max(1, args.step)
         max_rounds = args.max_rounds or 12_000_000
+        stalled_samples = 0
+        last_vcount = state["vcount"]
+        tier3_last = None
         while True:
-            vblank += step
-            if args.max_vblanks and vblank > args.max_vblanks:
+            if args.max_samples and samples >= args.max_samples:
                 break
-            reply = client.cmd("run_to_event", event="vblank9", count=vblank,
-                               stall=args.stall, max_rounds=max_rounds)
-            if reply.get("reached") and not args.max_rounds:
-                max_rounds = min(50_000_000, max(4_000_000, int(reply["rounds"]) * 8))
+            last_emulated = state["counts"]["cyc9"] / ARM9_HZ
+            step_rounds = 0
+            try:
+                if args.drive == "rounds":
+                    step_rounds = max(1, args.rounds_per_sample)
+                    if args.refine_at and last_emulated >= args.refine_at:
+                        step_rounds = max(1, args.refine_rounds)
+                    reply = client.cmd("run_rounds", count=step_rounds)
+                    target, progressed = None, True
+                elif args.drive == "cycles":
+                    target = state["counts"]["cyc9"] + max(1, args.cycles_per_sample)
+                    reply = client.cmd("run_cycles", arm9=target)
+                    progressed = bool(reply.get("reached"))
+                else:
+                    target = state["counts"]["vblank9"] + step
+                    reply = client.cmd("run_to_event", event="vblank9", count=target,
+                                       stall=args.stall, max_rounds=max_rounds)
+                    progressed = bool(reply.get("reached"))
+                    if progressed and not args.max_rounds:
+                        max_rounds = min(50_000_000, max(4_000_000, int(reply["rounds"]) * 8))
+            except TimeoutError:
+                emit({"sample": samples + 1, "wall_s": round(time.time() - started, 2),
+                      "emulated_s": round(last_emulated, 3), "stalled": True,
+                      "driver": args.drive, "driver_rounds": step_rounds,
+                      "note": f"driver call did not return within {args.timeout}s"})
+                print(f"stall: {args.drive} driver call did not return within {args.timeout}s "
+                      f"(asked for {step_rounds} rounds at {last_emulated:.2f}s emulated) - "
+                      f"the emulation is not progressing", file=sys.stderr)
+                break
+
             samples += 1
-            want_frames = not args.no_frames
-            state, frames = sample(client, engines=args.engines, want_frames=want_frames)
+            state, frames = sample(client, engines=args.engines, want_frames=not args.no_frames)
+            emulated = state["counts"]["cyc9"] / ARM9_HZ
             record = {"sample": samples, "wall_s": round(time.time() - started, 2),
-                      "vblank9": state["counts"]["vblank9"], **state}
+                      "emulated_s": round(emulated, 3), "vblanks": round(emulated * VBLANKS_PER_SECOND),
+                      **state}
             emit(record)
 
             disp_a = state["dispcnt_A"]
-            print(f"[{samples}] t={record['wall_s']:.0f}s vblank9={record['vblank9']} "
+            print(f"[{samples}] t={emulated:7.2f}s wall={record['wall_s']:.0f}s vcount={state['vcount']:3d} "
                   f"A9={state['arm9']['pc']:08X} A7={state['arm7']['pc']:08X} "
                   f"bgA={''.join('1' if b else '0' for b in disp_a['bg'])} objA={int(disp_a['obj'])} "
-                  f"blankA={int(disp_a['forced_blank'])}",
+                  f"blankA={int(disp_a['forced_blank'])} vbIRQ={int(state['dispstat9']['vblank_irq'])}",
                   file=sys.stderr)
 
             if args.screenshots and frames:
@@ -296,17 +379,38 @@ def main():
                 if written.get("all") != digest:
                     written["all"] = digest
                     for engine, (width, height, rgb) in frames.items():
-                        write_png(os.path.join(args.screenshots, f"vblank{vblank:06d}-{engine}.png"),
+                        write_png(os.path.join(args.screenshots, f"t{emulated:07.2f}s-{engine}.png"),
                                   width, height, rgb)
                     if not args.no_montage and len(frames) == 2:
-                        write_montage(os.path.join(args.screenshots, f"vblank{vblank:06d}-ds.png"),
+                        write_montage(os.path.join(args.screenshots, f"t{emulated:07.2f}s-ds.png"),
                                       [frames["A"], frames["B"]])
 
-            if not reply.get("reached"):
+            if args.tier3:
+                tier3 = state["tier3"]
+                entries = (tier3.get("tier3_entries9"), tier3.get("tier3_entries7"))
+                if entries != tier3_last or samples % max(1, args.tier3_every) == 0:
+                    tier3_last = entries
+                    coverage = client.cmd("tier3_coverage", max=16384)["entries"]
+                    with open(args.tier3, "w", encoding="utf-8") as handle:
+                        json.dump({"emulated_s": round(emulated, 3), "sample": samples,
+                                   "stats": tier3, "coverage": coverage}, handle)
+                    print(f"tier3: entries9={tier3['tier3_entries9']} insns9={tier3['tier3_insns9']} "
+                          f"entries7={tier3['tier3_entries7']} insns7={tier3['tier3_insns7']} "
+                          f"rejects9={tier3['clean_ram_rejects9']} rejects7={tier3['clean_ram_rejects7']}"
+                          f" -> {args.tier3}", file=sys.stderr)
+
+            seen.add((state["arm9"]["pc"], state["arm7"]["pc"], state["vcount"],
+                      tuple(state["counts"].values())))
+
+            stalled_samples = stalled_samples + 1 if state["vcount"] == last_vcount else 0
+            last_vcount = state["vcount"]
+
+            if not progressed or stalled_samples >= args.stall_samples:
                 report = stall_report(client, args.stall_probe_cycles, reply)
                 emit({"sample": samples + 1, "wall_s": round(time.time() - started, 2),
-                      "stalled": True, "requested_vblank9": vblank, **report})
-                for line in describe_stall(report):
+                      "emulated_s": round(emulated, 3), "stalled": True,
+                      "unchanged_vcount_samples": stalled_samples, **report})
+                for line in describe_stall(report, state):
                     print(line, file=sys.stderr)
                 break
 
@@ -324,8 +428,8 @@ def main():
             process.kill()
         if log_handle is not subprocess.DEVNULL:
             log_handle.close()
-        print(f"timeline: {out_path} ({samples} samples, {time.time() - started:.1f}s wall)",
-              file=sys.stderr)
+        print(f"timeline: {out_path} ({samples} samples, {len(seen)} distinct states, "
+              f"{time.time() - started:.1f}s wall)", file=sys.stderr)
 
 
 if __name__ == "__main__":
